@@ -1,100 +1,62 @@
 using UnityEngine;
 
+/// <summary>
+/// Keeps a car's GameObject where the simulation says the car is.
+///
+/// - The car model's pivot is its center, so we place it half a car length behind the front bumper.
+/// - Corners and lane changes are drawn as smooth curves (see PathGeometry).
+/// - The simulation moves in steps of 0.05 s; between two steps we blend the two poses so movement looks smooth.
+/// </summary>
 public class VehicleView : MonoBehaviour
 {
-    public VehicleAgent Agent;
-    public WorldView    WorldView;
+    Vehicle vehicle;
+    SimulationManager simulation;
 
-    // Keep the last rendered world position so we can smooth out one-tick
-    // connector traversals (car enters and exits a short connector in the
-    // same simulation tick — the view never sees the intermediate state).
-    Vector3    _lastPos;
-    bool       _hasPrev;
-    Quaternion _rotation = Quaternion.identity;
+    Vector3 previousPosition;
+    Quaternion previousRotation;
+    Vector3 currentPosition;
+    Quaternion currentRotation;
+    float simulationTimeOfCurrentPose = -1f;
 
-    // When a lane change completes, hold the blended position for one frame
-    // so there is no snap on the tick CurrentLane switches to the dest lane.
-    Vector3 _laneChangeFinalPos;
-    Vector3 _laneChangeFinalTan;
-    bool    _wasChangingLane;
+    public Vehicle Vehicle => vehicle;
 
-    void Update()
+    public void Show(Vehicle vehicle, SimulationManager simulation)
     {
-        if (Agent == null || WorldView == null) return;
+        this.vehicle = vehicle;
+        this.simulation = simulation;
 
-        float   edgeLength = Agent.CurrentLane.Edge.Length;
-        Vector3 finalPos;
-        Vector3 tangent;
+        ReadPoseFromSimulation();
+        previousPosition = currentPosition;
+        previousRotation = currentRotation;
+        transform.SetPositionAndRotation(currentPosition, currentRotation);
+    }
 
-        if (Agent.IsChangingLane)
+    void LateUpdate()
+    {
+        if (vehicle == null) return;
+
+        bool simulationMovedOn = simulation.World.Time != simulationTimeOfCurrentPose;
+        if (simulationMovedOn)
         {
-            var originView = WorldView.GetLaneView(Agent.LaneChangeOrigin);
-            var destView   = WorldView.GetLaneView(Agent.LaneChangeDest);
-
-            if (originView != null && destView != null)
-            {
-                Vector3 originPos = originView.Evaluate(Agent.Position, edgeLength);
-                Vector3 destPos   = destView  .Evaluate(Agent.Position, edgeLength);
-                finalPos = Vector3.Lerp(originPos, destPos, Agent.LaneChangeProgress);
-
-                Vector3 originTan = originView.TangentAt(Agent.Position, edgeLength);
-                Vector3 destTan   = destView  .TangentAt(Agent.Position, edgeLength);
-                tangent = Vector3.Slerp(originTan, destTan, Agent.LaneChangeProgress);
-            }
-            else
-            {
-                var view = WorldView.GetLaneView(Agent.CurrentLane);
-                if (view == null) return;
-                finalPos = view.Evaluate(Agent.Position, edgeLength);
-                tangent  = view.TangentAt(Agent.Position, edgeLength);
-            }
-
-            // Remember the blended position so the frame after completion
-            // can hold it rather than snapping to the dest lane position.
-            _laneChangeFinalPos = finalPos;
-            _laneChangeFinalTan = tangent;
-            _wasChangingLane    = true;
-        }
-        else
-        {
-            // One-frame holdover: lane change just completed this tick.
-            // Use the last blended position so there is no snap.
-            if (_wasChangingLane)
-            {
-                finalPos         = _laneChangeFinalPos;
-                tangent          = _laneChangeFinalTan;
-                _wasChangingLane = false;
-            }
-            else
-            {
-                var laneView = WorldView.GetLaneView(Agent.CurrentLane);
-                if (laneView == null) return;
-
-                finalPos = laneView.Evaluate(Agent.Position, edgeLength);
-                tangent  = laneView.TangentAt(Agent.Position, edgeLength);
-
-                // Short connector traversed in one tick: the car exits the
-                // connector and enters the next segment in a single Act() call,
-                // so this frame is the first time the view sees the new position.
-                // If the jump is large relative to the speed, smooth it.
-                if (_hasPrev)
-                {
-                    float maxJump = Mathf.Max(Agent.Speed * Time.deltaTime * 2f, 0.5f);
-                    if (Vector3.Distance(_lastPos, finalPos) > maxJump)
-                        finalPos = Vector3.MoveTowards(_lastPos, finalPos, maxJump);
-                }
-            }
+            previousPosition = currentPosition;
+            previousRotation = currentRotation;
+            ReadPoseFromSimulation();
         }
 
-        _lastPos = finalPos;
-        _hasPrev = true;
+        float blend = Mathf.Clamp01(simulation.StepProgress);
+        transform.SetPositionAndRotation(
+            Vector3.Lerp(previousPosition, currentPosition, blend),
+            Quaternion.Slerp(previousRotation, currentRotation, blend));
+    }
 
-        transform.position = finalPos;
-        if (tangent.sqrMagnitude > 0.001f)
-        {
-            Quaternion targetRot = Quaternion.LookRotation(tangent, Vector3.up);
-            _rotation = Quaternion.Slerp(_rotation, targetRot, Time.deltaTime * 8f);
-            transform.rotation = _rotation;
-        }
+    void ReadPoseFromSimulation()
+    {
+        MapPlacement placement = simulation.Placement;
+        PathPoint middleOfCar = vehicle.Path.PointBehindFront(vehicle.Length / 2f);
+        MapPose pose = PathGeometry.PoseAt(vehicle.Path, middleOfCar, cornerRadius: placement.MetersPerCell / 2f);
+
+        currentPosition = placement.ToWorld(pose.Position);
+        currentRotation = Quaternion.LookRotation(placement.ToWorldDirection(pose.Forward), Vector3.up);
+        simulationTimeOfCurrentPose = simulation.World.Time;
     }
 }

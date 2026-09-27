@@ -1,0 +1,19 @@
+{
+    "name": "TrafficSim.Editor",
+    "rootNamespace": "",
+    "references": [
+        "TrafficSim.Simulation",
+        "TrafficSim.Unity"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
