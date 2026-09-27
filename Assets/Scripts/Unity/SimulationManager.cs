@@ -47,6 +47,9 @@ public class SimulationManager : MonoBehaviour
     [Tooltip("Share of ambient drivers who ignore every traffic rule (shown in red). Taxis always follow the rules.")]
     [Range(0f, 1f)] public float rebelShare = 0f;
 
+    [Tooltip("This many ambient cars are always rebels (shown in red). Rebel Share applies to the other cars.")]
+    [Min(0)] public int rebelCars = 2;
+
     [Tooltip("Speed limit of one-lane streets and roundabouts.")]
     public float streetSpeedLimitKmh = 30f;
 
@@ -120,6 +123,7 @@ public class SimulationManager : MonoBehaviour
             DriverCalmnessMin = driverCalmnessMin,
             DriverCalmnessMax = driverCalmnessMax,
             RebelShare = rebelShare,
+            RebelCars = rebelCars,
             StreetSpeedLimitKmh = streetSpeedLimitKmh,
             AvenueSpeedLimitKmh = avenueSpeedLimitKmh,
             GreenLightSeconds = greenLightSeconds,

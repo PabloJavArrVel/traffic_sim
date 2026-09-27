@@ -133,6 +133,13 @@ public class World
         return SpawnAmbientCarAt(cellBehind, startCell, followsTrafficRules: !rebel);
     }
 
+    /// <summary>Adds a rebel car (one that ignores every traffic rule) at a random free place. Returns null if there was no free place.</summary>
+    public AmbientCar SpawnRebelCar()
+    {
+        if (!TryFindPlaceForNewCar(out RoadCell cellBehind, out RoadCell startCell)) return null;
+        return SpawnAmbientCarAt(cellBehind, startCell, followsTrafficRules: false);
+    }
+
     /// <summary>Adds a car with its front at the center of 'startCell' and its rear towards 'cellBehind' (both must be free).</summary>
     public AmbientCar SpawnAmbientCarAt(RoadCell cellBehind, RoadCell startCell, bool followsTrafficRules = true)
     {

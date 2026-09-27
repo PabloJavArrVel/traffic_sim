@@ -21,6 +21,7 @@ public class ExperimentScenario
     public float DriverCalmnessMin = 0f;
     public float DriverCalmnessMax = 1f;
     public float RebelShare = 0f;
+    public int RebelCars = 0;          // this many of the AmbientCars are always rebels; RebelShare applies to the rest
 
     // Streets
     public float StreetSpeedLimitKmh = 30f;
@@ -49,7 +50,9 @@ public class ExperimentScenario
     /// <summary>Adds the scenario's cars, taxis and first pedestrians to a new world.</summary>
     public void Populate(World world)
     {
-        for (int i = 0; i < AmbientCars; i++) world.SpawnAmbientCar();
+        int rebels = System.Math.Min(RebelCars, AmbientCars);
+        for (int i = 0; i < rebels; i++) world.SpawnRebelCar();
+        for (int i = rebels; i < AmbientCars; i++) world.SpawnAmbientCar();
         for (int i = 0; i < Taxis; i++) world.SpawnTaxi();
         for (int i = 0; i < InitialPedestrians; i++) world.SpawnPedestrian(PedestrianPatienceSeconds);
     }

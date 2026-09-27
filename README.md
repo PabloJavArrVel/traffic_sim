@@ -102,8 +102,10 @@ car, follow all of them perfectly:
   then cars turning in; between equals, whoever waited longest.
 * **Crossings:** never stop inside one.
 
-**Rebels** (`rebelShare` in the inspector, `RebelShare` in experiments) ignore all of these rules. They run red lights,
-drive at 60 km/h, don't give way, and drive into cells other cars have reserved. They brake for cars they can see, but
+**Rebels** ignore all of these rules. `rebelCars` in the inspector (`RebelCars` in experiments) makes exactly that many
+ambient cars rebels (2 in the scene, 0 in the experiments' baseline); `rebelShare` (`RebelShare`) makes each of the other
+cars a rebel with that probability. They run red lights, drive at 60 km/h, don't give way, and drive into cells other
+cars have reserved. They brake for cars they can see, but
 when they can't stop in time, **they crash**: two cars on one cell. A crash blocks the street for 30 s, then a tow
 truck moves both cars elsewhere. Rebels are drawn in red, and crashed cars are darkened. Law-abiding cars never crash
 into each other, and the tests check it.

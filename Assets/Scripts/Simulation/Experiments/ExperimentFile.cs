@@ -46,6 +46,7 @@ public static class ExperimentFile
             case "DriverCalmnessMin": scenario.DriverCalmnessMin = Number(value, column, row); break;
             case "DriverCalmnessMax": scenario.DriverCalmnessMax = Number(value, column, row); break;
             case "RebelShare": scenario.RebelShare = Number(value, column, row); break;
+            case "RebelCars": scenario.RebelCars = WholeNumber(value, column, row); break;
             case "StreetSpeedLimitKmh": scenario.StreetSpeedLimitKmh = Number(value, column, row); break;
             case "AvenueSpeedLimitKmh": scenario.AvenueSpeedLimitKmh = Number(value, column, row); break;
             case "GreenLightSeconds": scenario.GreenLightSeconds = Number(value, column, row); break;
