@@ -46,11 +46,16 @@ public static class CityMapValidator
         int number = 1;
         foreach (TrafficLightController intersection in network.TrafficLightControllers)
         {
-            text.AppendLine($"  Intersection {number}: east-west {CellsOf(intersection, eastWest: true)} | " +
-                            $"north-south {CellsOf(intersection, eastWest: false)}");
+            text.AppendLine($"  Intersection {number}: {LightCellsOf(intersection)}");
             number++;
         }
         return text.ToString();
+    }
+
+    /// <summary>The cells of an intersection's lights, for example "east-west P1 | north-south Q2 R2".</summary>
+    public static string LightCellsOf(TrafficLightController intersection)
+    {
+        return $"east-west {CellsOf(intersection, eastWest: true)} | north-south {CellsOf(intersection, eastWest: false)}";
     }
 
     static string CellsOf(TrafficLightController intersection, bool eastWest)

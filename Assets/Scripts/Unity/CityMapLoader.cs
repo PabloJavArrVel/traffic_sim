@@ -17,13 +17,17 @@ public static class CityMapLoader
 
     public static RoadNetwork LoadRoadNetwork(string fileName, SimulationSettings settings)
     {
+        return RoadNetworkBuilder.Build(LoadCityMap(fileName), settings);
+    }
+
+    public static CityMap LoadCityMap(string fileName)
+    {
         string path = PathTo(fileName);
         if (!File.Exists(path))
             throw new CityMapException($"City map not found: {path}");
 
         string[,] cellTexts = XlsxSheetReader.ReadSheet(ReadFileEvenIfOpenInExcel(path), SheetName);
-        CityMap map = CityMapParser.Parse(cellTexts);
-        return RoadNetworkBuilder.Build(map, settings);
+        return CityMapParser.Parse(cellTexts);
     }
 
     /// <summary>Excel keeps the file open while you edit it; FileShare.ReadWrite lets us read it anyway.</summary>

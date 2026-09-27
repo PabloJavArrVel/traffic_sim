@@ -39,6 +39,9 @@ public class World
     public FleetManager FleetManager { get; }
     public SimulationStatistics Statistics { get; } = new SimulationStatistics();
 
+    /// <summary>Measurements taken while the simulation runs (speeds, queues, rides...), for experiments.</summary>
+    public SimulationMetrics Metrics { get; } = new SimulationMetrics();
+
     /// <summary>Seconds since the simulation started.</summary>
     public float Time { get; private set; }
 
@@ -59,6 +62,8 @@ public class World
         foreach (Agent agent in agents) agent.Perceive(this);
         foreach (Agent agent in agents) agent.Deliberate(this);
         foreach (Agent agent in agents) agent.Act(this);
+
+        Metrics.RecordStep(this);
     }
 
     // ------------------------------------------------------------------
@@ -70,7 +75,8 @@ public class World
     {
         if (!TryFindPlaceForNewCar(out RoadCell cellBehind, out RoadCell startCell)) return null;
 
-        var car = new AmbientCar(nextVehicleId++, cellBehind, startCell, DriverProfile.RandomDriver(Random), Settings.CarLength);
+        DriverProfile driver = DriverProfile.RandomDriver(Random, Settings.DriverCalmnessMin, Settings.DriverCalmnessMax);
+        var car = new AmbientCar(nextVehicleId++, cellBehind, startCell, driver, Settings.CarLength);
         AddVehicle(car);
         return car;
     }
@@ -96,7 +102,7 @@ public class World
         while (destination == pickup)
             destination = curbCells[Random.Next(curbCells.Count)];
 
-        var pedestrian = new Pedestrian(nextPedestrianId++, pickup, destination, patienceSeconds);
+        var pedestrian = new Pedestrian(nextPedestrianId++, pickup, destination, patienceSeconds, requestedAt: Time);
         agents.Add(pedestrian);
         pedestrians.Add(pedestrian);
         return pedestrian;

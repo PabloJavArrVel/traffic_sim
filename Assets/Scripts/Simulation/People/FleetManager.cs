@@ -32,7 +32,7 @@ public class FleetManager : Agent
             if (taxi == null) return;   // every taxi is busy: the queue keeps its order
 
             taxi.Assign(next, world);
-            next.TaxiAssigned();
+            next.TaxiAssigned(world.Time);
             queue.RemoveAt(0);
         }
     }

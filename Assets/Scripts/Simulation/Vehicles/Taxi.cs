@@ -55,7 +55,7 @@ public class Taxi : Vehicle
             case TaxiState.Boarding:
                 if (WaitedAtCurb(world))
                 {
-                    Passenger.GetIn();
+                    Passenger.GetIn(world.Time);
                     State = TaxiState.Carrying;
                     DriveTo(Passenger.DestinationCell, world);
                 }
@@ -68,7 +68,8 @@ public class Taxi : Vehicle
             case TaxiState.DroppingOff:
                 if (WaitedAtCurb(world))
                 {
-                    Passenger.GetOut();
+                    Passenger.GetOut(world.Time);
+                    world.Metrics.RecordRide(Passenger);
                     Passenger = null;
                     RidesCompleted++;
                     world.Statistics.RidesCompleted++;

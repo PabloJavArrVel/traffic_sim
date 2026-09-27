@@ -23,10 +23,10 @@ public class DriverProfile
     /// <summary>How many seconds behind the car ahead the driver likes to stay.</summary>
     public float TimeGap { get; }
 
-    /// <summary>An everyday driver: somewhere between in a hurry and very calm.</summary>
-    public static DriverProfile RandomDriver(Random random)
+    /// <summary>An everyday driver whose calmness is random between 'calmnessMin' and 'calmnessMax' (0 = in a hurry, 1 = very calm).</summary>
+    public static DriverProfile RandomDriver(Random random, float calmnessMin = 0f, float calmnessMax = 1f)
     {
-        float calmness = (float)random.NextDouble();   // 0 = in a hurry, 1 = very calm
+        float calmness = Blend(calmnessMin, calmnessMax, (float)random.NextDouble());
         return new DriverProfile(
             speedFactor: Blend(1.1f, 0.85f, calmness),
             maxAcceleration: Blend(2.5f, 1.5f, calmness),

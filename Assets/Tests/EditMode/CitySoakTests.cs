@@ -6,7 +6,7 @@ using NUnit.Framework;
 /// </summary>
 public class CitySoakTests
 {
-    const float Step = SimulationManager.StepSeconds;
+    static readonly float Step = new SimulationSettings().SimulationStepSeconds;
 
     [Test]
     public void TenMinutesOfCityTrafficWithoutOverlapsOrJams()

@@ -149,10 +149,12 @@ public class CameraFollowController : MonoBehaviour
     public void CycleFilter()
     {
         if (switchingTarget) return;
-        Filter = Filter == TargetFilter.Pedestrians ? TargetFilter.All : Filter + 1;
-        RefreshVisibleTargets();
-        selectedIndex = 0;
-        if (visibleTargets.Count > 0) StartCoroutine(FadeToTarget(0));
+        StartCoroutine(SwitchWhileScreenIsBlack(() =>
+        {
+            Filter = Filter == TargetFilter.Pedestrians ? TargetFilter.All : Filter + 1;
+            RefreshVisibleTargets();
+            selectedIndex = 0;
+        }));
     }
 
     public void ToggleFreeCamera()
@@ -173,14 +175,16 @@ public class CameraFollowController : MonoBehaviour
     {
         int count = visibleTargets.Count;
         if (switchingTarget || count <= 1) return;
-        StartCoroutine(FadeToTarget((selectedIndex + step + count) % count));
+        int newIndex = (selectedIndex + step + count) % count;
+        StartCoroutine(SwitchWhileScreenIsBlack(() => selectedIndex = newIndex));
     }
 
-    IEnumerator FadeToTarget(int newIndex)
+    /// <summary>Fades to black, changes the target while nothing is visible, then fades back in.</summary>
+    IEnumerator SwitchWhileScreenIsBlack(System.Action changeTarget)
     {
         switchingTarget = true;
         yield return Fade(0f, 1f);
-        selectedIndex = newIndex;
+        changeTarget();
         snapToTarget = true;
         yield return new WaitForSeconds(0.05f);
         yield return Fade(1f, 0f);

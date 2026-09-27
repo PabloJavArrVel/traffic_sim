@@ -5,15 +5,14 @@ using UnityEngine;
 /// <summary>
 /// Starts and runs the simulation. When you press Play it:
 ///   1. reads the city map (Assets/StreamingAssets/CityMap.xlsx) and builds the road network,
-///   2. creates the World with ambient cars, taxis and a few pedestrians,
+///   2. creates the World with the cars, taxis and pedestrians of the scenario,
 ///   3. every frame advances the World in small fixed steps and adds new pedestrians from time to time.
+///
+/// The scenario is the numbers below, or, if you type a name in 'scenario', that row of Experiments.xlsx.
 /// The GameObjects you see are created and moved by the WorldView.
 /// </summary>
 public class SimulationManager : MonoBehaviour
 {
-    /// <summary>The simulation always advances in steps of this many seconds, whatever the frame rate.</summary>
-    public const float StepSeconds = 0.05f;
-
     /// <summary>If a frame took very long, don't try to catch up more than this many steps at once.</summary>
     const int MaxStepsPerFrame = 10;
 
@@ -27,6 +26,10 @@ public class SimulationManager : MonoBehaviour
     [Tooltip("Size of one map cell in Unity units (one road tile).")]
     public float cellSize = 1.2f;
 
+    [Header("Scenario")]
+    [Tooltip("Empty: use the numbers below. Or the Name of a row of Assets/StreamingAssets/Experiments.xlsx.")]
+    public string scenario = "";
+
     [Header("Scene references")]
     public WorldView worldView;
 
@@ -36,6 +39,13 @@ public class SimulationManager : MonoBehaviour
     [Header("Traffic")]
     public int ambientCarCount = 30;
     public int taxiCount = 3;
+
+    [Tooltip("0 = every driver in a hurry, 1 = every driver very calm. Each driver gets a random value between min and max.")]
+    [Range(0f, 1f)] public float driverCalmnessMin = 0f;
+    [Range(0f, 1f)] public float driverCalmnessMax = 1f;
+
+    public float speedLimitKmh = 30f;
+    public float greenLightSeconds = 15f;
 
     [Header("Pedestrians")]
     public int initialPedestrians = 3;
@@ -55,42 +65,64 @@ public class SimulationManager : MonoBehaviour
     public int randomSeed = 0;
 
     float secondsNotSimulatedYet;
-    float secondsUntilNextPedestrian;
+    PedestrianSpawner pedestrianSpawner;
 
     public World World { get; private set; }
     public MapPlacement Placement { get; private set; }
 
+    /// <summary>The scenario being played (from the inspector or from Experiments.xlsx).</summary>
+    public ExperimentScenario Scenario { get; private set; }
+
     /// <summary>How far we are from the last simulation step to the next one (0 to 1). Used to draw smooth movement.</summary>
-    public float StepProgress => secondsNotSimulatedYet / StepSeconds;
+    public float StepProgress => World == null ? 0f : secondsNotSimulatedYet / World.Settings.SimulationStepSeconds;
 
     void Start()
     {
         try
         {
+            Scenario = string.IsNullOrWhiteSpace(scenario) ? ScenarioFromInspector() : ExperimentFileLoader.LoadScenario(scenario);
             CreateWorld();
         }
-        catch (CityMapException problem)
+        catch (Exception problem) when (problem is CityMapException || problem is ExperimentFileException)
         {
             Debug.LogError(problem.Message);
             enabled = false;
             return;
         }
 
+        Scenario.Populate(World);
+        pedestrianSpawner = new PedestrianSpawner(Scenario);
+
         worldView.Initialize(this);
         worldView.ShowTrafficLights(World.Network);
+        foreach (Vehicle vehicle in World.Vehicles) ShowVehicle(vehicle);
+        foreach (Pedestrian pedestrian in World.Pedestrians) ShowPedestrian(pedestrian);
 
-        for (int i = 0; i < ambientCarCount; i++) ShowVehicle(World.SpawnAmbientCar());
-        for (int i = 0; i < taxiCount; i++) ShowVehicle(World.SpawnTaxi());
-        for (int i = 0; i < initialPedestrians; i++) ShowPedestrian(World.SpawnPedestrian(pedestrianPatienceSeconds));
-        secondsUntilNextPedestrian = secondsBetweenPedestrians;
-
-        Debug.Log($"[Simulation] {CityMapValidator.Describe(World.Network)}" +
+        Debug.Log($"[Simulation] Scenario '{Scenario.Name}'. {CityMapValidator.Describe(World.Network)}" +
                   $"{World.Vehicles.Count} vehicles and {World.Pedestrians.Count} pedestrians created.");
+    }
+
+    ExperimentScenario ScenarioFromInspector()
+    {
+        return new ExperimentScenario
+        {
+            Name = "Inspector",
+            AmbientCars = ambientCarCount,
+            Taxis = taxiCount,
+            DriverCalmnessMin = driverCalmnessMin,
+            DriverCalmnessMax = driverCalmnessMax,
+            SpeedLimitKmh = speedLimitKmh,
+            GreenLightSeconds = greenLightSeconds,
+            InitialPedestrians = initialPedestrians,
+            MaxPedestrians = maxPedestrians,
+            SecondsBetweenPedestrians = secondsBetweenPedestrians,
+            PedestrianPatienceSeconds = pedestrianPatienceSeconds
+        };
     }
 
     void CreateWorld()
     {
-        var settings = new SimulationSettings();
+        SimulationSettings settings = Scenario.CreateSettings();
         RoadNetwork network = CityMapLoader.LoadRoadNetwork(cityMapFile, settings);
         Placement = new MapPlacement(cellA1Position, cellSize, settings.MetersPerCell);
 
@@ -100,36 +132,26 @@ public class SimulationManager : MonoBehaviour
 
     void Update()
     {
-        float simulatedSeconds = Time.deltaTime * simulationSpeed;
-        RunSimulationSteps(simulatedSeconds);
-        AddPedestriansFromTimeToTime(simulatedSeconds);
+        RunSimulationSteps(Time.deltaTime * simulationSpeed);
         RemoveFinishedPedestrians();
     }
 
     void RunSimulationSteps(float seconds)
     {
+        float step = World.Settings.SimulationStepSeconds;
         secondsNotSimulatedYet += seconds;
 
         int steps = 0;
-        while (secondsNotSimulatedYet >= StepSeconds && steps < MaxStepsPerFrame)
+        while (secondsNotSimulatedYet >= step && steps < MaxStepsPerFrame)
         {
-            World.Tick(StepSeconds);
-            secondsNotSimulatedYet -= StepSeconds;
+            World.Tick(step);
+            ShowPedestrian(pedestrianSpawner.Update(World));
+            secondsNotSimulatedYet -= step;
             steps++;
         }
 
         // Too far behind (the game was paused or a frame took very long): skip the rest instead of freezing.
-        if (steps == MaxStepsPerFrame) secondsNotSimulatedYet = Math.Min(secondsNotSimulatedYet, StepSeconds);
-    }
-
-    void AddPedestriansFromTimeToTime(float seconds)
-    {
-        secondsUntilNextPedestrian -= seconds;
-        if (secondsUntilNextPedestrian > 0f) return;
-
-        secondsUntilNextPedestrian = secondsBetweenPedestrians;
-        if (World.Pedestrians.Count < maxPedestrians)
-            ShowPedestrian(World.SpawnPedestrian(pedestrianPatienceSeconds));
+        if (steps == MaxStepsPerFrame) secondsNotSimulatedYet = Math.Min(secondsNotSimulatedYet, step);
     }
 
     void RemoveFinishedPedestrians()
@@ -144,7 +166,6 @@ public class SimulationManager : MonoBehaviour
 
     void ShowVehicle(Vehicle vehicle)
     {
-        if (vehicle == null) return;   // no free place left in the city
         GameObject shown = worldView.ShowVehicle(vehicle);
         if (followCam != null && shown != null) followCam.Follow(vehicle, shown.transform);
     }

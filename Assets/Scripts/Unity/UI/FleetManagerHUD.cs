@@ -1,10 +1,11 @@
+using System.Collections.Generic;
 using System.Text;
 using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// A panel in the top-right corner with the state of every taxi and how many pedestrians are waiting,
-/// riding or were served. Put it on the same GameObject as the SimulationManager.
+/// A panel in the top-right corner with the state of every taxi, how many pedestrians are waiting, riding or were
+/// served, and live traffic metrics (the same ones experiments save). Put it on the same GameObject as the SimulationManager.
 /// </summary>
 [RequireComponent(typeof(SimulationManager))]
 public class FleetManagerHUD : MonoBehaviour
@@ -29,6 +30,7 @@ public class FleetManagerHUD : MonoBehaviour
     SimulationManager simulation;
     TMP_Text taxiText;
     TMP_Text pedestrianText;
+    TMP_Text metricsText;
     float secondsSinceRefresh;
 
     void Start()
@@ -43,6 +45,8 @@ public class FleetManagerHUD : MonoBehaviour
         taxiText = HudBuilder.CreateLabel(panel.transform, "Taxis", "...", headerColor, 11f);
         HudBuilder.CreateLabel(panel.transform, "Separator", "──────────────────────", new Color(1f, 1f, 1f, 0.15f), 9f);
         pedestrianText = HudBuilder.CreateLabel(panel.transform, "Pedestrians", "...", pendingColor, 11f);
+        HudBuilder.CreateLabel(panel.transform, "Separator", "──────────────────────", new Color(1f, 1f, 1f, 0.15f), 9f);
+        metricsText = HudBuilder.CreateLabel(panel.transform, "Metrics", "...", headerColor, 11f);
     }
 
     void Update()
@@ -53,6 +57,7 @@ public class FleetManagerHUD : MonoBehaviour
         secondsSinceRefresh = 0f;
         taxiText.text = DescribeTaxis(simulation.World);
         pedestrianText.text = DescribePedestrians(simulation.World);
+        metricsText.text = DescribeMetrics(simulation);
     }
 
     string DescribeTaxis(World world)
@@ -87,6 +92,33 @@ public class FleetManagerHUD : MonoBehaviour
         text.AppendLine($"<color={HudBuilder.ColorTag(enRouteColor)}>  Taxi asignado:  {taxiOnTheWay}</color>");
         text.AppendLine($"<color={HudBuilder.ColorTag(carryingColor)}>  En viaje:       {riding}</color>");
         text.AppendLine($"<color={HudBuilder.ColorTag(headerColor)}>Viajes completados: {statistics.RidesCompleted} · se cansaron: {statistics.RidesGivenUp}</color>");
+        return text.ToString().TrimEnd();
+    }
+
+    /// <summary>The last measured interval of traffic, and the rides so far.</summary>
+    static string DescribeMetrics(SimulationManager simulation)
+    {
+        var text = new StringBuilder();
+        text.AppendLine($"MÉTRICAS · escenario {simulation.Scenario.Name}");
+
+        IReadOnlyList<MetricsSample> samples = simulation.World.Metrics.Samples;
+        if (samples.Count == 0) return text.Append("  midiendo...").ToString();
+
+        MetricsSample last = samples[samples.Count - 1];
+        text.AppendLine($"  Velocidad media: {last.AverageSpeedKmh:F1} km/h");
+        text.AppendLine($"  Detenidos: {last.ShareStopped:P0} (semáforo {last.ShareStoppedAtRedLight:P0}, " +
+                        $"fila {last.ShareStoppedBehindCar:P0}, cruce {last.ShareStoppedAtJunction:P0})");
+        text.AppendLine($"  Taxis ocupados: {last.ShareOfTaxisBusy:P0}");
+
+        float pickupSeconds = 0f;
+        int completed = 0;
+        foreach (RideRecord ride in simulation.World.Metrics.Rides)
+        {
+            if (ride.GaveUp) continue;
+            pickupSeconds += ride.SecondsUntilPickup;
+            completed++;
+        }
+        if (completed > 0) text.AppendLine($"  Espera media por taxi: {pickupSeconds / completed:F0} s");
         return text.ToString().TrimEnd();
     }
 

@@ -56,3 +56,9 @@ Thumbs.db
 # Crash logs
 # =========================
 sysinfo.txt
+
+# =========================
+# Experiment results (regenerate them from Unity)
+# =========================
+/ExperimentResults/
+__pycache__/

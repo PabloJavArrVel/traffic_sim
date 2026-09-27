@@ -16,12 +16,13 @@ public class Pedestrian : Agent
 {
     bool askedForTaxi;
 
-    public Pedestrian(int id, RoadCell pickupCell, RoadCell destinationCell, float patienceSeconds)
+    public Pedestrian(int id, RoadCell pickupCell, RoadCell destinationCell, float patienceSeconds, float requestedAt)
     {
         Id = id;
         PickupCell = pickupCell;
         DestinationCell = destinationCell;
         SecondsLeftBeforeGivingUp = patienceSeconds;
+        RequestedAt = requestedAt;
     }
 
     public int Id { get; }
@@ -37,6 +38,12 @@ public class Pedestrian : Agent
 
     public bool IsFinished => State == PedestrianState.Arrived || State == PedestrianState.GaveUp;
 
+    // Simulation times of each step of the ride (NaN until it happens). Used by SimulationMetrics.
+    public float RequestedAt { get; }
+    public float TaxiAssignedAt { get; private set; } = float.NaN;
+    public float PickedUpAt { get; private set; } = float.NaN;
+    public float FinishedAt { get; private set; } = float.NaN;
+
     public override void Deliberate(World world)
     {
         if (!askedForTaxi)
@@ -51,11 +58,27 @@ public class Pedestrian : Agent
         if (SecondsLeftBeforeGivingUp <= 0f)
         {
             State = PedestrianState.GaveUp;
+            FinishedAt = world.Time;
             world.Statistics.RidesGivenUp++;
+            world.Metrics.RecordRide(this);
         }
     }
 
-    public void TaxiAssigned() => State = PedestrianState.TaxiOnTheWay;
-    public void GetIn() => State = PedestrianState.Riding;
-    public void GetOut() => State = PedestrianState.Arrived;
+    public void TaxiAssigned(float now)
+    {
+        State = PedestrianState.TaxiOnTheWay;
+        TaxiAssignedAt = now;
+    }
+
+    public void GetIn(float now)
+    {
+        State = PedestrianState.Riding;
+        PickedUpAt = now;
+    }
+
+    public void GetOut(float now)
+    {
+        State = PedestrianState.Arrived;
+        FinishedAt = now;
+    }
 }

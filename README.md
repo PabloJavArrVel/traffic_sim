@@ -26,8 +26,9 @@ the taxi dispatcher is an **agent** that perceives, deliberates and acts at ever
 2. Open this folder as a Unity project.
 3. Open `Assets/Scenes/City.unity` and press **Play**.
 
-The `SimController` object in the scene has the settings you will want to change: number of cars and taxis,
-pedestrians, simulation speed, and a random seed (the same seed gives the same traffic every run).
+The `SimController` object in the scene has the settings you will want to change: number of cars and taxis, the
+driver mix, speed limit, light timing, pedestrians, simulation speed, and a random seed (the same seed gives the same
+traffic every run). Or type the name of a scenario from `Experiments.xlsx` in its `scenario` field.
 
 ### Controls
 
@@ -100,6 +101,22 @@ another one. A car stuck for a long time (not at a red light) looks for another 
 free taxi (by driving distance), first come, first served. The taxi drives to the pedestrian, stops while they get in,
 drives them to their destination and lets them out. A pedestrian who waits too long without a taxi gives up.
 
+### Experiments
+
+Scenarios live in `Assets/StreamingAssets/Experiments.xlsx`, one row each (its `Help` sheet explains the columns):
+number of cars and taxis, passenger demand, driver mix (calm vs. in a hurry), speed limit, green-light time,
+duration and how many random seeds to repeat it with. Empty cells keep the baseline value.
+
+* **Run them:** `Traffic Simulation > Experiments` in Unity (pick scenarios, press Run; the window shows the average
+  of each scenario), or from a terminal:
+  `Unity -batchmode -quit -projectPath . -executeMethod ExperimentsCommandLine.RunAll -excelReport`.
+  Each run is 20 simulated minutes without graphics and takes about 2 seconds.
+* **Results:** CSV files in `ExperimentResults/<date>/` (not committed). **Make Excel report** (or
+  `python3 analysis/analyze.py`) adds `report.xlsx` with averages, 95% confidence intervals, a comparison with the
+  baseline and charts. See `analysis/README.md`.
+* **Watch one:** type the scenario's name in the SimulationManager's `scenario` field and press Play. The panel at the
+  top right shows the same metrics live.
+
 ### Project structure
 
 | Folder | Assembly | What's inside |
@@ -108,7 +125,8 @@ drives them to their destination and lets them out. A pedestrian who waits too l
 | `Assets/Scripts/Unity` | `TrafficSim.Unity` | Everything Unity: `SimulationManager` (starts and runs the world), views that move the GameObjects, HUDs, camera, day/night, Scene view gizmos. |
 | `Assets/Editor` | `TrafficSim.Editor` | The `Traffic Simulation` menu. |
 | `Assets/Tests` | `TrafficSim.Tests.*` | EditMode and PlayMode tests. |
-| `Assets/StreamingAssets` | – | `CityMap.xlsx`. |
+| `Assets/StreamingAssets` | – | `CityMap.xlsx` and `Experiments.xlsx`. |
+| `analysis` | – | Python script that turns experiment results into an Excel report. |
 | `Assets/Art`, `Assets/Prefabs` | – | Models, textures and prefabs (city, vehicles, people, easter eggs). |
 
 Because the simulation has no Unity code, it can run and be tested without opening a scene.
