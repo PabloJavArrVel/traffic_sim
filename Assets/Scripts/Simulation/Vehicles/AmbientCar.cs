@@ -1,8 +1,11 @@
-/// <summary>Background traffic: drives to a random place in the city, then to another one, forever.</summary>
+/// <summary>
+/// Background traffic: drives to a random place in the city, then to another one, forever.
+/// Most ambient drivers follow the traffic rules; rebels (followsTrafficRules = false) ignore them.
+/// </summary>
 public class AmbientCar : Vehicle
 {
-    public AmbientCar(int id, RoadCell cellBehind, RoadCell startCell, DriverProfile driver, float length)
-        : base(id, cellBehind, startCell, driver, length)
+    public AmbientCar(int id, RoadCell cellBehind, RoadCell startCell, DriverProfile driver, float length, bool followsTrafficRules)
+        : base(id, cellBehind, startCell, driver, length, followsTrafficRules)
     {
     }
 

@@ -6,7 +6,8 @@ public enum ObstacleReason
     RedLight,
     BusyJunction,
     BusyLane,
-    EndOfRoute
+    EndOfRoute,
+    Crash
 }
 
 /// <summary>The nearest thing a car must not drive past, and how fast that thing is moving.</summary>

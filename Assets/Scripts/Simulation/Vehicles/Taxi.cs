@@ -10,13 +10,14 @@ public enum TaxiState
 /// <summary>
 /// An autonomous taxi. It cruises around until the FleetManager assigns it a passenger, drives to them, waits
 /// while they get in, drives them to their destination and lets them out. Then it is free again.
+/// Taxis always follow the traffic rules.
 /// </summary>
 public class Taxi : Vehicle
 {
     float secondsAtCurb;
 
     public Taxi(int id, RoadCell cellBehind, RoadCell startCell, float length)
-        : base(id, cellBehind, startCell, DriverProfile.AutonomousTaxi(), length)
+        : base(id, cellBehind, startCell, DriverProfile.AutonomousTaxi(), length, followsTrafficRules: true)
     {
     }
 
@@ -25,7 +26,7 @@ public class Taxi : Vehicle
     /// <summary>The passenger the taxi is going to pick up or is carrying, or null.</summary>
     public Pedestrian Passenger { get; private set; }
 
-    public bool IsAvailable => State == TaxiState.Cruising;
+    public bool IsAvailable => State == TaxiState.Cruising && !IsCrashed;
 
     public int RidesCompleted { get; private set; }
 
@@ -75,6 +76,24 @@ public class Taxi : Vehicle
                     world.Statistics.RidesCompleted++;
                     State = TaxiState.Cruising;
                 }
+                break;
+        }
+    }
+
+    /// <summary>After a crash the tow truck left us somewhere else: carry on with the job from there.</summary>
+    protected override void OnTowed(World world)
+    {
+        switch (State)
+        {
+            case TaxiState.GoingToPickup:
+            case TaxiState.Boarding:
+                State = TaxiState.GoingToPickup;
+                DriveTo(Passenger.PickupCell, world);
+                break;
+            case TaxiState.Carrying:
+            case TaxiState.DroppingOff:
+                State = TaxiState.Carrying;
+                DriveTo(Passenger.DestinationCell, world);
                 break;
         }
     }

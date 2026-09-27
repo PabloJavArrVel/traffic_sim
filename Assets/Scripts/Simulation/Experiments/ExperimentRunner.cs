@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>The result of running one scenario once (with one seed).</summary>
 public class ExperimentRun
@@ -12,7 +14,7 @@ public class ExperimentRun
 }
 
 /// <summary>
-/// Runs scenarios without graphics, as fast as the computer can. Twenty minutes of city take about a second.
+/// Runs scenarios without graphics, as fast as the computer can: twenty minutes of city take a few seconds per core.
 /// </summary>
 public static class ExperimentRunner
 {
@@ -50,28 +52,42 @@ public static class ExperimentRunner
     }
 
     /// <summary>
-    /// Runs every scenario once per seed. 'reportProgress' gets a message and the overall progress (0 to 1) and can
-    /// return false to cancel; the runs finished so far are returned.
+    /// Runs every scenario once per seed, several runs at the same time (one per processor core): every run has its
+    /// own World, so they don't affect each other. The results come back in the order of the scenarios and seeds.
+    ///
+    /// 'reportProgress' (optional) is called from the calling thread with a message and the overall progress (0 to 1),
+    /// and can return false to cancel; the runs that finished are returned.
     /// </summary>
     public static List<ExperimentRun> RunAll(CityMap map, List<ExperimentScenario> scenarios, Func<string, float, bool> reportProgress = null)
     {
-        var runs = new List<ExperimentRun>();
-        int totalRuns = 0;
-        foreach (ExperimentScenario scenario in scenarios) totalRuns += scenario.Seeds;
-
+        var jobs = new List<(ExperimentScenario scenario, int seed)>();
         foreach (ExperimentScenario scenario in scenarios)
-        {
             for (int i = 0; i < scenario.Seeds; i++)
-            {
-                int seed = scenario.FirstSeed + i;
-                string message = $"{scenario.Name}, seed {seed} ({runs.Count + 1} of {totalRuns})";
-                ExperimentRun run = Run(map, scenario, seed, progressInRun =>
-                    reportProgress == null || reportProgress(message, (runs.Count + progressInRun) / totalRuns));
+                jobs.Add((scenario, scenario.FirstSeed + i));
 
-                if (run == null) return runs;   // cancelled
-                runs.Add(run);
-            }
+        var results = new ExperimentRun[jobs.Count];
+        int finishedRuns = 0;
+        var cancel = new CancellationTokenSource();
+
+        Task allRuns = Task.Run(() => Parallel.For(0, jobs.Count, jobIndex =>
+        {
+            if (cancel.IsCancellationRequested) return;
+            (ExperimentScenario scenario, int seed) = jobs[jobIndex];
+            results[jobIndex] = Run(map, scenario, seed, _ => !cancel.IsCancellationRequested);
+            Interlocked.Increment(ref finishedRuns);
+        }));
+
+        // While the runs work, this thread reports progress (Unity only lets the main thread draw a progress bar).
+        while (!allRuns.Wait(200))
+        {
+            string message = $"{finishedRuns} of {jobs.Count} runs finished, using {Environment.ProcessorCount} cores";
+            bool keepGoing = reportProgress == null || reportProgress(message, (float)finishedRuns / jobs.Count);
+            if (!keepGoing) cancel.Cancel();
         }
-        return runs;
+
+        var finished = new List<ExperimentRun>();
+        foreach (ExperimentRun run in results)
+            if (run != null) finished.Add(run);   // cancelled runs are left out
+        return finished;
     }
 }

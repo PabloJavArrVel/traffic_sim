@@ -14,7 +14,14 @@ public class SimulationSettings
 
     // ---- Cars ---------------------------------------------------------
     public float CarLength = 4.5f;
-    public float SpeedLimitKmh = 30f;
+
+    /// <summary>Speed limit of streets with one lane (and of roundabouts).</summary>
+    public float StreetSpeedLimitKmh = 30f;
+
+    /// <summary>Speed limit of avenues: streets with two lanes side by side.</summary>
+    public float AvenueSpeedLimitKmh = 50f;
+
+    /// <summary>Everyone slows down to this speed for 90° corners (it's physics, not a rule, so rebels do too).</summary>
     public float TurnSpeedKmh = 15f;
 
     /// <summary>
@@ -39,6 +46,16 @@ public class SimulationSettings
     public float DriverCalmnessMin = 0f;
     public float DriverCalmnessMax = 1f;
 
+    // ---- Rebels -------------------------------------------------------
+    /// <summary>Share of ambient drivers (0 to 1) who ignore every traffic rule. Taxis always follow the rules.</summary>
+    public float RebelShare = 0f;
+
+    /// <summary>Rebels ignore speed limits and drive this fast wherever they can.</summary>
+    public float RebelSpeedKmh = 60f;
+
+    /// <summary>After a crash, the cars stay where they are, blocking the street, for this long; then they are towed away.</summary>
+    public float SecondsToClearACrash = 30f;
+
     // ---- Traffic lights -----------------------------------------------
     public float GreenLightSeconds = 15f;
     public float YellowLightSeconds = 3f;
@@ -50,6 +67,8 @@ public class SimulationSettings
     public float SecondsToGetInOrOut = 3f;
 
     // ---- Handy conversions ----------------------------------------------
-    public float SpeedLimit => SpeedLimitKmh / 3.6f;
+    public float StreetSpeedLimit => StreetSpeedLimitKmh / 3.6f;
+    public float AvenueSpeedLimit => AvenueSpeedLimitKmh / 3.6f;
     public float TurnSpeed => TurnSpeedKmh / 3.6f;
+    public float RebelSpeed => RebelSpeedKmh / 3.6f;
 }

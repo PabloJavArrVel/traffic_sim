@@ -9,6 +9,7 @@ using System.Text;
 ///   samples.csv        one row per run and time interval: how the traffic evolved (MetricsSample)
 ///   rides.csv          one row per finished ride request (RideRecord)
 ///   intersections.csv  one row per run and intersection: its average queue
+///   collisions.csv     one row per crash (CollisionRecord)
 /// </summary>
 public static class ExperimentResultsWriter
 {
@@ -19,23 +20,27 @@ public static class ExperimentResultsWriter
         File.WriteAllText(Path.Combine(folder, "samples.csv"), SamplesCsv(runs));
         File.WriteAllText(Path.Combine(folder, "rides.csv"), RidesCsv(runs));
         File.WriteAllText(Path.Combine(folder, "intersections.csv"), IntersectionsCsv(runs));
+        File.WriteAllText(Path.Combine(folder, "collisions.csv"), CollisionsCsv(runs));
     }
 
     static string SummaryCsv(List<ExperimentRun> runs)
     {
         var csv = new StringBuilder();
-        csv.AppendLine("scenario,seed,ambient_cars,taxis,average_speed_kmh,share_stopped,share_stopped_at_red_light," +
+        csv.AppendLine("scenario,seed,ambient_cars,taxis,rebel_cars,average_speed_kmh,share_stopped,share_stopped_at_red_light," +
                        "share_stopped_behind_car,share_stopped_at_junction,km_per_vehicle_per_hour,detours_taken," +
                        "longest_stop_seconds,share_of_taxis_busy,rides_finished,rides_completed,rides_given_up," +
-                       "share_given_up,average_seconds_until_pickup,p90_seconds_until_pickup,average_trip_seconds");
+                       "share_given_up,average_seconds_until_pickup,p90_seconds_until_pickup,average_trip_seconds," +
+                       "share_speeding,red_lights_run,collisions,collisions_involving_rebels," +
+                       "collisions_between_law_abiding_drivers,collisions_involving_taxis");
         foreach (ExperimentRun run in runs)
         {
             RunSummary s = run.Summary;
-            csv.AppendLine(Row(s.Scenario, s.Seed, s.AmbientCars, s.Taxis, s.AverageSpeedKmh, s.ShareStopped,
+            csv.AppendLine(Row(s.Scenario, s.Seed, s.AmbientCars, s.Taxis, s.RebelCars, s.AverageSpeedKmh, s.ShareStopped,
                 s.ShareStoppedAtRedLight, s.ShareStoppedBehindCar, s.ShareStoppedAtJunction, s.KilometersPerVehiclePerHour,
                 s.DetoursTaken, s.LongestStopSeconds, s.ShareOfTaxisBusy, s.RidesFinished, s.RidesCompleted,
                 s.RidesGivenUp, s.ShareGivenUp, s.AverageSecondsUntilPickup, s.Percentile90SecondsUntilPickup,
-                s.AverageTripSeconds));
+                s.AverageTripSeconds, s.ShareSpeeding, s.RedLightsRun, s.Collisions, s.CollisionsInvolvingRebels,
+                s.CollisionsBetweenLawAbidingDrivers, s.CollisionsInvolvingTaxis));
         }
         return csv.ToString();
     }
@@ -44,14 +49,15 @@ public static class ExperimentResultsWriter
     {
         var csv = new StringBuilder();
         csv.AppendLine("scenario,seed,time_seconds,average_speed_kmh,share_stopped,share_stopped_at_red_light," +
-                       "share_stopped_behind_car,share_stopped_at_junction,km_driven,share_of_taxis_busy,pedestrians_waiting");
+                       "share_stopped_behind_car,share_stopped_at_junction,km_driven,share_of_taxis_busy,pedestrians_waiting," +
+                       "share_speeding,red_lights_run,collisions");
         foreach (ExperimentRun run in runs)
         {
             foreach (MetricsSample m in run.Metrics.Samples)
             {
                 csv.AppendLine(Row(run.Scenario.Name, run.Seed, m.Time, m.AverageSpeedKmh, m.ShareStopped,
                     m.ShareStoppedAtRedLight, m.ShareStoppedBehindCar, m.ShareStoppedAtJunction, m.KilometersDriven,
-                    m.ShareOfTaxisBusy, m.PedestriansWaiting));
+                    m.ShareOfTaxisBusy, m.PedestriansWaiting, m.ShareSpeeding, m.RedLightsRun, m.Collisions));
             }
         }
         return csv.ToString();
@@ -83,6 +89,21 @@ public static class ExperimentResultsWriter
             {
                 csv.AppendLine(Row(run.Scenario.Name, run.Seed, i + 1, CityMapValidator.LightCellsOf(intersections[i]),
                     run.Summary.AverageQueuePerIntersection[i]));
+            }
+        }
+        return csv.ToString();
+    }
+
+    static string CollisionsCsv(List<ExperimentRun> runs)
+    {
+        var csv = new StringBuilder();
+        csv.AppendLine("scenario,seed,time_seconds,cell,first_vehicle,first_kind,second_vehicle,second_kind,rebel_involved,taxi_involved,faster_car_kmh");
+        foreach (ExperimentRun run in runs)
+        {
+            foreach (CollisionRecord c in run.Metrics.Collisions)
+            {
+                csv.AppendLine(Row(run.Scenario.Name, run.Seed, c.Time, c.Cell, c.FirstVehicle, c.FirstKind, c.SecondVehicle,
+                    c.SecondKind, c.RebelInvolved ? 1 : 0, c.TaxiInvolved ? 1 : 0, c.FasterCarKmh));
             }
         }
         return csv.ToString();

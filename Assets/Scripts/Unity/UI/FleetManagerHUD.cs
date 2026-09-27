@@ -119,6 +119,10 @@ public class FleetManagerHUD : MonoBehaviour
             completed++;
         }
         if (completed > 0) text.AppendLine($"  Espera media por taxi: {pickupSeconds / completed:F0} s");
+
+        int redLightsRun = 0;
+        foreach (MetricsSample sample in samples) redLightsRun += sample.RedLightsRun;
+        text.AppendLine($"  Choques: {simulation.World.Metrics.Collisions.Count} · rojos pasados: {redLightsRun}");
         return text.ToString().TrimEnd();
     }
 

@@ -20,9 +20,11 @@ public static class ExperimentsCommandLine
             CityMap map = CityMapLoader.LoadCityMap("CityMap.xlsx");
             List<ExperimentScenario> scenarios = ExperimentFileLoader.LoadScenarios();
 
+            float lastProgressShown = -1f;
             List<ExperimentRun> runs = ExperimentRunner.RunAll(map, scenarios, (message, progress) =>
             {
-                Console.WriteLine($"[Experiments] {progress:P0} {message}");
+                if (progress != lastProgressShown) Console.WriteLine($"[Experiments] {progress:P0} {message}");
+                lastProgressShown = progress;
                 return true;
             });
 

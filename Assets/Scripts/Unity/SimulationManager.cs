@@ -44,7 +44,15 @@ public class SimulationManager : MonoBehaviour
     [Range(0f, 1f)] public float driverCalmnessMin = 0f;
     [Range(0f, 1f)] public float driverCalmnessMax = 1f;
 
-    public float speedLimitKmh = 30f;
+    [Tooltip("Share of ambient drivers who ignore every traffic rule (shown in red). Taxis always follow the rules.")]
+    [Range(0f, 1f)] public float rebelShare = 0f;
+
+    [Tooltip("Speed limit of one-lane streets and roundabouts.")]
+    public float streetSpeedLimitKmh = 30f;
+
+    [Tooltip("Speed limit of avenues (two lanes side by side).")]
+    public float avenueSpeedLimitKmh = 50f;
+
     public float greenLightSeconds = 15f;
 
     [Header("Pedestrians")]
@@ -111,7 +119,9 @@ public class SimulationManager : MonoBehaviour
             Taxis = taxiCount,
             DriverCalmnessMin = driverCalmnessMin,
             DriverCalmnessMax = driverCalmnessMax,
-            SpeedLimitKmh = speedLimitKmh,
+            RebelShare = rebelShare,
+            StreetSpeedLimitKmh = streetSpeedLimitKmh,
+            AvenueSpeedLimitKmh = avenueSpeedLimitKmh,
             GreenLightSeconds = greenLightSeconds,
             InitialPedestrians = initialPedestrians,
             MaxPedestrians = maxPedestrians,

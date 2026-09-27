@@ -27,7 +27,7 @@ the taxi dispatcher is an **agent** that perceives, deliberates and acts at ever
 3. Open `Assets/Scenes/City.unity` and press **Play**.
 
 The `SimController` object in the scene has the settings you will want to change: number of cars and taxis, the
-driver mix, speed limit, light timing, pedestrians, simulation speed, and a random seed (the same seed gives the same
+driver mix, share of rebel drivers, speed limits, light timing, pedestrians, simulation speed, and a random seed (the same seed gives the same
 traffic every run). Or type the name of a scenario from `Experiments.xlsx` in its `scenario` field.
 
 ### Controls
@@ -93,6 +93,21 @@ junctions and while changing lanes. The tests check it independently with geomet
 with something ahead (a car, a red light, a busy junction) it slows down smoothly and stops just before it. Cars also
 slow down before corners. Each ambient driver has a slightly different personality (`DriverProfile`).
 
+**Traffic rules** (`TrafficRules.cs`). Law-abiding drivers, which means every taxi and, by default, every ambient
+car, follow all of them perfectly:
+* **Lights:** stop at red; at yellow, stop if you can do it comfortably.
+* **Speed limits:** 50 km/h on avenues (two lanes side by side), 30 km/h on one-lane streets and in the roundabout.
+  Cars slow down *before* entering a slower street.
+* **Right of way** where no light decides: cars in the roundabout go first, then cars going straight along the street,
+  then cars turning in; between equals, whoever waited longest.
+* **Crossings:** never stop inside one.
+
+**Rebels** (`rebelShare` in the inspector, `RebelShare` in experiments) ignore all of these rules. They run red lights,
+drive at 60 km/h, don't give way, and drive into cells other cars have reserved. They brake for cars they can see, but
+when they can't stop in time, **they crash**: two cars on one cell. A crash blocks the street for 30 s, then a tow
+truck moves both cars elsewhere. Rebels are drawn in red, and crashed cars are darkened. Law-abiding cars never crash
+into each other, and the tests check it.
+
 **Routes** are the shortest way through the cells (Dijkstra, `RouteFinder`). Lane changes count as a bit longer, and
 cells where a car is stopped count as much longer, so cars avoid jams. Ambient cars drive to a random place, then to
 another one. A car stuck for a long time (not at a red light) looks for another way.
@@ -104,13 +119,14 @@ drives them to their destination and lets them out. A pedestrian who waits too l
 ### Experiments
 
 Scenarios live in `Assets/StreamingAssets/Experiments.xlsx`, one row each (its `Help` sheet explains the columns):
-number of cars and taxis, passenger demand, driver mix (calm vs. in a hurry), speed limit, green-light time,
+number of cars and taxis, passenger demand, driver mix (calm vs. in a hurry), share of rebel drivers, speed limits, green-light time,
 duration and how many random seeds to repeat it with. Empty cells keep the baseline value.
 
 * **Run them:** `Traffic Simulation > Experiments` in Unity (pick scenarios, press Run; the window shows the average
   of each scenario), or from a terminal:
   `Unity -batchmode -quit -projectPath . -executeMethod ExperimentsCommandLine.RunAll -excelReport`.
-  Each run is 20 simulated minutes without graphics and takes about 2 seconds.
+  Each run is 20 simulated minutes without graphics. Runs go in parallel, one per processor core: the 80 runs of
+  `Experiments.xlsx` take about 5 minutes on a 10-core Mac.
 * **Results:** CSV files in `ExperimentResults/<date>/` (not committed). **Make Excel report** (or
   `python3 analysis/analyze.py`) adds `report.xlsx` with averages, 95% confidence intervals, a comparison with the
   baseline and charts. See `analysis/README.md`.

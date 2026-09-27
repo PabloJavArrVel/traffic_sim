@@ -84,7 +84,8 @@ public class CameraFollowController : MonoBehaviour
 
             string position = $"{selectedIndex + 1} / {visibleTargets.Count}";
             if (selected.Pedestrian != null) return $"Ped {position}  {TaxiDescriptions.Status(selected.Pedestrian)}";
-            return selected.Vehicle is Taxi ? $"Taxi  {position}" : $"Car  {position}";
+            if (selected.Vehicle is Taxi) return $"Taxi  {position}";
+            return selected.Vehicle.FollowsTrafficRules ? $"Car  {position}" : $"Rebel car  {position}";
         }
     }
 

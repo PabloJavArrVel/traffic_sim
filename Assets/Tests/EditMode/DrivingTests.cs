@@ -21,7 +21,7 @@ public class DrivingTests
         "^ < <  < <"
     };
 
-    // Two loops that share their right part: they merge at C1 and split at C3.
+    // Two loops that share their right part: they merge at C1 (the side street from C2 gives way) and split at C3.
     static readonly string[] TwoLoops =
     {
         "> > > > v",
@@ -61,7 +61,7 @@ public class DrivingTests
     }
 
     [Test]
-    public void CarsTakeTurnsWhereTwoStreetsMerge()
+    public void SideStreetCarsStillGetIntoTheMainStreet()
     {
         World world = CreateWorld(TwoLoops, cars: 5);
 
@@ -69,7 +69,7 @@ public class DrivingTests
 
         foreach (Vehicle car in world.Vehicles)
             Assert.That(car.DistanceDriven, Is.GreaterThan(200f), $"car {car.Id} kept driving");
-        Assert.That(world.Statistics.LongestStopSeconds, Is.LessThan(30f), "nobody waited too long at the merge");
+        Assert.That(world.Statistics.LongestStopSeconds, Is.LessThan(60f), "giving way never means waiting forever");
     }
 
     static World CreateWorld(string[] map, int cars)

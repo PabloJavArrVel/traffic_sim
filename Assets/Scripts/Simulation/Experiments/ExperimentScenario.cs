@@ -17,12 +17,14 @@ public class ExperimentScenario
     public float SecondsBetweenPedestrians = 30f;
     public float PedestrianPatienceSeconds = 120f;
 
-    // Drivers: calmness 0 = in a hurry, 1 = very calm (see DriverProfile)
+    // Drivers: calmness 0 = in a hurry, 1 = very calm (see DriverProfile). Rebels ignore every traffic rule.
     public float DriverCalmnessMin = 0f;
     public float DriverCalmnessMax = 1f;
+    public float RebelShare = 0f;
 
     // Streets
-    public float SpeedLimitKmh = 30f;
+    public float StreetSpeedLimitKmh = 30f;
+    public float AvenueSpeedLimitKmh = 50f;
     public float GreenLightSeconds = 15f;
 
     // How to run it
@@ -37,7 +39,9 @@ public class ExperimentScenario
         {
             DriverCalmnessMin = DriverCalmnessMin,
             DriverCalmnessMax = DriverCalmnessMax,
-            SpeedLimitKmh = SpeedLimitKmh,
+            RebelShare = RebelShare,
+            StreetSpeedLimitKmh = StreetSpeedLimitKmh,
+            AvenueSpeedLimitKmh = AvenueSpeedLimitKmh,
             GreenLightSeconds = GreenLightSeconds
         };
     }

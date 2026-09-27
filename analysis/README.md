@@ -17,3 +17,4 @@ Excel or pandas directly:
 | `samples.csv` | run and 10-second interval: speed, stopped cars, taxis busy... |
 | `rides.csv` | finished ride request: waiting and trip times, gave up or not |
 | `intersections.csv` | run and intersection with lights: average queue |
+| `collisions.csv` | crash: when, where (Excel cell), which cars (taxi, law-abiding car or rebel), speed |

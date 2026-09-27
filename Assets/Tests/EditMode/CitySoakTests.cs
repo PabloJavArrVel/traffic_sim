@@ -31,11 +31,19 @@ public class CitySoakTests
             if (step % 5 == 0) TrafficChecks.AssertNoCarsOverlap(world);
         }
 
-        // Queues at red lights are normal, gridlock is not: every car keeps moving and nobody waits two minutes.
+        // Queues at red lights are normal (up to a few light cycles), gridlock is not: every car keeps moving.
         foreach (Vehicle vehicle in world.Vehicles)
             Assert.That(vehicle.DistanceDriven, Is.GreaterThan(800f), $"{vehicle.GetType().Name} {vehicle.Id} kept driving");
-        Assert.That(world.Statistics.LongestStopSeconds, Is.LessThan(120f), "no car was stuck for two minutes");
+        Assert.That(world.Statistics.LongestStopSeconds, Is.LessThan(180f), "no car was stuck for three minutes");
         Assert.That(world.Statistics.RidesCompleted, Is.GreaterThanOrEqualTo(5), "taxis completed rides");
+
+        // Everybody follows the rules in this city: no crashes, no red lights run, nobody speeding.
+        Assert.That(world.Metrics.Collisions, Is.Empty);
+        foreach (MetricsSample sample in world.Metrics.Samples)
+        {
+            Assert.That(sample.RedLightsRun, Is.Zero, $"red light run at {sample.Time}s");
+            Assert.That(sample.ShareSpeeding, Is.Zero, $"speeding at {sample.Time}s");
+        }
     }
 
     [Test]

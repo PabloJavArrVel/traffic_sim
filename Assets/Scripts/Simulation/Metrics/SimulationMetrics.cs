@@ -4,7 +4,7 @@ using System.Collections.Generic;
 /// <summary>
 /// Measures the simulation while it runs, for experiments. Every step it adds up what the cars are doing;
 /// every 'SampleSeconds' it turns those sums into one MetricsSample (averages over that interval).
-/// Rides are recorded one by one when they finish (the passenger arrived or gave up).
+/// Rides and collisions are recorded one by one when they happen.
 /// </summary>
 public class SimulationMetrics
 {
@@ -18,6 +18,7 @@ public class SimulationMetrics
 
     readonly List<MetricsSample> samples = new List<MetricsSample>();
     readonly List<RideRecord> rides = new List<RideRecord>();
+    readonly List<CollisionRecord> collisions = new List<CollisionRecord>();
     Dictionary<TrafficLight, int> intersectionOfLight;
 
     // Sums for the interval being measured.
@@ -26,11 +27,14 @@ public class SimulationMetrics
     float speedSum;
     int stopped, stoppedAtRedLight, stoppedBehindCar, stoppedAtJunction;
     int taxiSteps, busyTaxiSteps;
+    int speedingSteps;
+    int redLightsRun, collisionsInInterval;
     float metersDriven;
     float[] queuedCarSteps;
 
     public IReadOnlyList<MetricsSample> Samples => samples;
     public IReadOnlyList<RideRecord> Rides => rides;
+    public IReadOnlyList<CollisionRecord> Collisions => collisions;
 
     public void RecordStep(World world)
     {
@@ -46,8 +50,11 @@ public class SimulationMetrics
             if (vehicle is Taxi taxi)
             {
                 taxiSteps++;
-                if (!taxi.IsAvailable) busyTaxiSteps++;
+                if (taxi.State != TaxiState.Cruising) busyTaxiSteps++;
             }
+
+            // A little margin so rounding never counts as speeding.
+            if (vehicle.Speed > vehicle.CellAtFront.SpeedLimit * 1.02f) speedingSteps++;
 
             if (vehicle.Speed >= StoppedSpeed) continue;
             stopped++;
@@ -67,6 +74,31 @@ public class SimulationMetrics
         int stepsPerSample = Math.Max(1, (int)Math.Round(SampleSeconds / world.DeltaTime));
         if (steps >= stepsPerSample)
             FinishSample(world);
+    }
+
+    public void RecordRedLightRun() => redLightsRun++;
+
+    public void RecordCollision(float time, RoadCell cell, Vehicle first, Vehicle second)
+    {
+        collisionsInInterval++;
+        collisions.Add(new CollisionRecord
+        {
+            Time = time,
+            Cell = cell.Position.ExcelAddress,
+            FirstVehicle = first.Id,
+            SecondVehicle = second.Id,
+            FirstKind = KindOf(first),
+            SecondKind = KindOf(second),
+            RebelInvolved = !first.FollowsTrafficRules || !second.FollowsTrafficRules,
+            TaxiInvolved = first is Taxi || second is Taxi,
+            FasterCarKmh = Math.Max(first.Speed, second.Speed) * 3.6f
+        });
+    }
+
+    static string KindOf(Vehicle vehicle)
+    {
+        if (vehicle is Taxi) return "Taxi";
+        return vehicle.FollowsTrafficRules ? "Car" : "Rebel";
     }
 
     public void RecordRide(Pedestrian pedestrian)
@@ -102,11 +134,14 @@ public class SimulationMetrics
             KilometersDriven = metersDriven / 1000f,
             ShareOfTaxisBusy = Average(busyTaxiSteps, taxiSteps),
             PedestriansWaiting = waitingPedestrians,
-            AverageQueuePerIntersection = queues
+            AverageQueuePerIntersection = queues,
+            ShareSpeeding = Average(speedingSteps, vehicleSteps),
+            RedLightsRun = redLightsRun,
+            Collisions = collisionsInInterval
         });
 
         steps = vehicleSteps = stopped = stoppedAtRedLight = stoppedBehindCar = stoppedAtJunction = 0;
-        taxiSteps = busyTaxiSteps = 0;
+        taxiSteps = busyTaxiSteps = speedingSteps = redLightsRun = collisionsInInterval = 0;
         speedSum = metersDriven = 0f;
         Array.Clear(queuedCarSteps, 0, queuedCarSteps.Length);
     }
@@ -149,6 +184,23 @@ public class MetricsSample
     public float ShareOfTaxisBusy;          // 0..1 of taxis with a passenger assigned or on board
     public int PedestriansWaiting;          // waiting for a taxi to be assigned, at the end of the interval
     public float[] AverageQueuePerIntersection;   // stopped cars near each intersection
+    public float ShareSpeeding;             // 0..1 of vehicles going faster than the limit of their street
+    public int RedLightsRun;                // stop lines crossed on red in this interval
+    public int Collisions;                  // crashes in this interval
+}
+
+/// <summary>One crash between two vehicles.</summary>
+public class CollisionRecord
+{
+    public float Time;
+    public string Cell;           // Excel address of the cell where it happened
+    public int FirstVehicle;
+    public int SecondVehicle;
+    public string FirstKind;      // "Taxi", "Car" (law-abiding) or "Rebel"
+    public string SecondKind;
+    public bool RebelInvolved;
+    public bool TaxiInvolved;
+    public float FasterCarKmh;    // speed of the faster of the two cars
 }
 
 /// <summary>One finished ride request.</summary>

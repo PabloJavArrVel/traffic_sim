@@ -6,7 +6,8 @@ using System.Collections.Generic;
 /// and the clock.
 ///
 /// Each Tick moves time forward a little: first the traffic lights change if it's their time, then every agent
-/// perceives, then every agent deliberates, then every agent acts (see Agent).
+/// perceives, then every agent deliberates, then every agent acts (see Agent). Then the World checks for crashes
+/// (two cars on the same cell) and tows away the cars that crashed a while ago.
 /// </summary>
 public class World
 {
@@ -59,24 +60,86 @@ public class World
         foreach (TrafficLightController intersection in Network.TrafficLightControllers)
             intersection.Tick(seconds);
 
+        UpdateCarsOnCells();
         foreach (Agent agent in agents) agent.Perceive(this);
         foreach (Agent agent in agents) agent.Deliberate(this);
         foreach (Agent agent in agents) agent.Act(this);
 
+        UpdateCarsOnCells();
+        DetectCrashes();
+        TowAwayOldCrashes();
         Metrics.RecordStep(this);
+    }
+
+    // ------------------------------------------------------------------
+    // Crashes
+    // ------------------------------------------------------------------
+
+    /// <summary>Writes on every cell which cars are physically on it right now.</summary>
+    void UpdateCarsOnCells()
+    {
+        foreach (RoadCell cell in Network.Cells) cell.CarsOnIt.Clear();
+        foreach (Vehicle vehicle in vehicles)
+            foreach (RoadCell cell in vehicle.Path.CellsUnderCar(vehicle.Length))
+                cell.CarsOnIt.Add(vehicle);
+    }
+
+    /// <summary>A cell has room for one car: two cars on the same cell have crashed.</summary>
+    void DetectCrashes()
+    {
+        foreach (RoadCell cell in Network.Cells)
+        {
+            for (int a = 0; a < cell.CarsOnIt.Count; a++)
+            {
+                for (int b = a + 1; b < cell.CarsOnIt.Count; b++)
+                {
+                    Vehicle first = cell.CarsOnIt[a];
+                    Vehicle second = cell.CarsOnIt[b];
+                    bool alreadyCrashedBefore = first.IsCrashed && second.IsCrashed;
+                    if (alreadyCrashedBefore) continue;
+
+                    Metrics.RecordCollision(Time, cell, first, second);
+                    first.Crash(Time);
+                    second.Crash(Time);
+                }
+            }
+        }
+    }
+
+    /// <summary>Crashed cars block the street for a while; then a tow truck takes them to a free place elsewhere.</summary>
+    void TowAwayOldCrashes()
+    {
+        foreach (Vehicle vehicle in vehicles)
+        {
+            bool readyToTow = vehicle.IsCrashed && Time - vehicle.CrashedAt >= Settings.SecondsToClearACrash;
+            if (readyToTow && TryFindPlaceForNewCar(out RoadCell cellBehind, out RoadCell startCell))
+                vehicle.TowTo(cellBehind, startCell, this);
+        }
     }
 
     // ------------------------------------------------------------------
     // Adding agents
     // ------------------------------------------------------------------
 
-    /// <summary>Adds a car at a random free place. Returns null if there was no free place.</summary>
+    /// <summary>
+    /// Adds a car at a random free place. It is a rebel with probability Settings.RebelShare.
+    /// Returns null if there was no free place.
+    /// </summary>
     public AmbientCar SpawnAmbientCar()
     {
         if (!TryFindPlaceForNewCar(out RoadCell cellBehind, out RoadCell startCell)) return null;
 
-        DriverProfile driver = DriverProfile.RandomDriver(Random, Settings.DriverCalmnessMin, Settings.DriverCalmnessMax);
-        var car = new AmbientCar(nextVehicleId++, cellBehind, startCell, driver, Settings.CarLength);
+        bool rebel = Random.NextDouble() < Settings.RebelShare;
+        return SpawnAmbientCarAt(cellBehind, startCell, followsTrafficRules: !rebel);
+    }
+
+    /// <summary>Adds a car with its front at the center of 'startCell' and its rear towards 'cellBehind' (both must be free).</summary>
+    public AmbientCar SpawnAmbientCarAt(RoadCell cellBehind, RoadCell startCell, bool followsTrafficRules = true)
+    {
+        DriverProfile driver = followsTrafficRules
+            ? DriverProfile.RandomDriver(Random, Settings.DriverCalmnessMin, Settings.DriverCalmnessMax)
+            : DriverProfile.Rebel();
+        var car = new AmbientCar(nextVehicleId++, cellBehind, startCell, driver, Settings.CarLength, followsTrafficRules);
         AddVehicle(car);
         return car;
     }
@@ -130,6 +193,7 @@ public class World
     {
         agents.Add(vehicle);
         vehicles.Add(vehicle);
+        vehicle.PlanFirstRoute(this);
     }
 
     /// <summary>
@@ -141,10 +205,10 @@ public class World
         for (int attempt = 0; attempt < 100; attempt++)
         {
             RoadCell candidate = ordinaryCells[Random.Next(ordinaryCells.Count)];
-            if (!candidate.IsFree) continue;
+            if (!IsEmpty(candidate)) continue;
 
             CellLink wayIn = OnlyDriveLinkInto(candidate);
-            if (wayIn == null || !wayIn.From.IsFree || wayIn.From.IsJunction) continue;
+            if (wayIn == null || !IsEmpty(wayIn.From) || wayIn.From.IsJunction) continue;
 
             cellBehind = wayIn.From;
             startCell = candidate;
@@ -155,6 +219,9 @@ public class World
         startCell = null;
         return false;
     }
+
+    /// <summary>Nobody has reserved the cell and no car is on it (a rebel can be on a cell without reserving it).</summary>
+    static bool IsEmpty(RoadCell cell) => cell.IsFree && cell.CarsOnIt.Count == 0;
 
     static CellLink OnlyDriveLinkInto(RoadCell cell)
     {

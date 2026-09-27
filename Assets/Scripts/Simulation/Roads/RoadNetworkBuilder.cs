@@ -11,6 +11,7 @@ using System;
 ///  4. Lane change: a car can move one cell forward and one cell sideways into a parallel lane, when the cell
 ///     beside it and the cell ahead of it point the same way too. Cars don't change lanes in or next to junctions.
 ///  5. Traffic lights are grouped into intersections (see TrafficLightPlanner).
+///  6. Speed limits: avenues (two or more lanes side by side) are faster than streets; roundabouts are slow.
 /// </summary>
 public static class RoadNetworkBuilder
 {
@@ -28,8 +29,41 @@ public static class RoadNetworkBuilder
         foreach (RoadCell cell in network.Cells)
             AddLaneChanges(cell, network);
 
+        MarkRoundabouts(map, network);
+        SetSpeedLimits(network, settings);
         TrafficLightPlanner.GroupIntoIntersections(network, settings);
         return network;
+    }
+
+    /// <summary>The street cells touching a roundabout island (also diagonally) are the roundabout itself.</summary>
+    static void MarkRoundabouts(CityMap map, RoadNetwork network)
+    {
+        foreach (RoadCell cell in network.Cells)
+        {
+            for (int rowStep = -1; rowStep <= 1; rowStep++)
+            {
+                for (int columnStep = -1; columnStep <= 1; columnStep++)
+                {
+                    var neighbour = new GridPosition(cell.Position.Row + rowStep, cell.Position.Column + columnStep);
+                    if (map.CellAt(neighbour).Kind == MapCellKind.RoundaboutIsland) cell.IsInRoundabout = true;
+                }
+            }
+        }
+    }
+
+    // Rule 6.
+    static void SetSpeedLimits(RoadNetwork network, SimulationSettings settings)
+    {
+        foreach (RoadCell cell in network.Cells)
+        {
+            Direction direction = cell.TrafficDirection;
+            bool laneOnTheLeft = SameDirection(network.CellAt(cell.Position.Step(direction.TurnLeft())), direction);
+            bool laneOnTheRight = SameDirection(network.CellAt(cell.Position.Step(direction.TurnRight())), direction);
+            cell.IsAvenue = laneOnTheLeft || laneOnTheRight;
+
+            bool fast = cell.IsAvenue && !cell.IsInRoundabout;
+            cell.SpeedLimit = fast ? settings.AvenueSpeedLimit : settings.StreetSpeedLimit;
+        }
     }
 
     static void AddStreetCells(CityMap map, RoadNetwork network, float metersPerCell)

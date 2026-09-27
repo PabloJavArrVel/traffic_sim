@@ -40,6 +40,10 @@ METRICS = {
     "average_seconds_until_pickup": ("Average wait until pickup (s)", False),
     "p90_seconds_until_pickup": ("90% of passengers picked up within (s)", False),
     "average_trip_seconds": ("Average trip time (s)", False),
+    "collisions": ("Crashes", False),
+    "collisions_involving_taxis": ("Crashes involving taxis", False),
+    "red_lights_run": ("Red lights run", False),
+    "share_speeding": ("Share of time vehicles are speeding", False),
 }
 
 METRIC_EXPLANATIONS = [
@@ -56,6 +60,13 @@ METRIC_EXPLANATIONS = [
     ("average_seconds_until_pickup", "From asking for a taxi to getting in."),
     ("p90_seconds_until_pickup", "90% of the passengers got in within this time."),
     ("average_trip_seconds", "From getting in to arriving."),
+    ("rebel_cars", "Ambient drivers who ignore every traffic rule (red lights, speed limits, right of way)."),
+    ("collisions", "Crashes after the warm-up. A crash blocks the street for 30 s, then the cars are towed elsewhere."),
+    ("collisions_involving_rebels", "Crashes where at least one car was a rebel."),
+    ("collisions_between_law_abiding_drivers", "Crashes between two law-abiding cars. Always 0: law-abiding drivers only drive into cells they reserved."),
+    ("collisions_involving_taxis", "Crashes where a taxi was hit."),
+    ("red_lights_run", "Stop lines crossed while the light was red (only rebels do it)."),
+    ("share_speeding", "Share of the time vehicles go faster than the limit of their street (only rebels do it)."),
 ]
 
 # Two-sided 95% t values for small samples (degrees of freedom -> t). Above 30 we use 1.96.
@@ -129,7 +140,8 @@ def draw_charts(runs, summary, samples, intersections, folder):
     charts = []
 
     # 1. The main metrics per scenario, with 95% confidence intervals
-    for metric in ["average_speed_kmh", "share_stopped", "average_seconds_until_pickup", "share_given_up", "share_of_taxis_busy", "longest_stop_seconds"]:
+    for metric in ["average_speed_kmh", "share_stopped", "average_seconds_until_pickup", "share_given_up",
+                   "share_of_taxis_busy", "longest_stop_seconds", "collisions", "red_lights_run"]:
         name = METRICS[metric][0]
         figure, axes = plt.subplots(figsize=(10, 4.5))
         colors = ["#44546A" if s == BASELINE else "#5B9BD5" for s in summary["scenario"]]
@@ -234,6 +246,12 @@ def main():
     runs = pd.read_csv(folder / "summary.csv")
     samples = pd.read_csv(folder / "samples.csv")
     intersections = pd.read_csv(folder / "intersections.csv")
+    collisions_file = folder / "collisions.csv"
+    if collisions_file.exists() and collisions_file.stat().st_size > 0:
+        collisions = pd.read_csv(collisions_file)
+        if not collisions.empty:
+            where = collisions.groupby("cell").size().sort_values(ascending=False).head(5)
+            print("Cells with most crashes (all runs): " + ", ".join(f"{cell} ({count})" for cell, count in where.items()))
 
     summary = summarize(runs)
     comparison = compare_to_baseline(runs) if BASELINE in set(runs["scenario"]) else pd.DataFrame()

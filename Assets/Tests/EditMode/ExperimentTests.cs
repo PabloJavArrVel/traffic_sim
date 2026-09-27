@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 
 public class ExperimentTests
@@ -33,5 +35,20 @@ public class ExperimentTests
         foreach (string file in new[] { "summary.csv", "samples.csv", "rides.csv", "intersections.csv" })
             Assert.That(File.Exists(Path.Combine(folder, file)), Is.True, file);
         Assert.That(File.ReadAllLines(Path.Combine(folder, "samples.csv")).Length, Is.EqualTo(19), "header + 18 samples");
+    }
+
+    [Test]
+    public void RunsInParallelComeBackInOrderWithTheSameResults()
+    {
+        CityMap map = CityMapLoader.LoadCityMap("CityMap.xlsx");
+        var quick = new ExperimentScenario { Name = "Quick", DurationMinutes = 2f, WarmupMinutes = 0.5f, Seeds = 3, FirstSeed = 10 };
+        var busy = new ExperimentScenario { Name = "Busy", AmbientCars = 45, DurationMinutes = 2f, WarmupMinutes = 0.5f, Seeds = 2, FirstSeed = 20 };
+
+        List<ExperimentRun> runs = ExperimentRunner.RunAll(map, new List<ExperimentScenario> { quick, busy });
+
+        Assert.That(runs.Select(run => $"{run.Scenario.Name} {run.Seed}"),
+            Is.EqualTo(new[] { "Quick 10", "Quick 11", "Quick 12", "Busy 20", "Busy 21" }));
+        ExperimentRun alone = ExperimentRunner.Run(map, busy, seed: 21);
+        Assert.That(runs[4].Summary.AverageSpeedKmh, Is.EqualTo(alone.Summary.AverageSpeedKmh), "running in parallel doesn't change the results");
     }
 }

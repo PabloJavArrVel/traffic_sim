@@ -2,50 +2,56 @@ using System;
 using System.Collections.Generic;
 
 /// <summary>
-/// A car driving through the city (ambient cars and taxis are both vehicles).
+/// A car driving through the city. Ambient cars and taxis are both vehicles.
+/// (This class is split in three files: this one, Vehicle.LookingAhead.cs and Vehicle.Routes.cs.)
 ///
-/// The rule that keeps cars from overlapping, even at junctions:
-///     a street cell belongs to at most one car at a time, and a car only drives into cells it holds.
+/// A street cell has room for one car: two cars on the same cell have crashed.
+///
+/// Law-abiding drivers (every taxi and most ambient cars) never crash into each other. They only drive into cells they
+/// have reserved, and they follow every rule in TrafficRules: lights, speed limits and right of way.
+/// Rebels ignore every rule. They run red lights, speed, don't give way, and drive into cells other cars have
+/// reserved. They still brake for cars they can see in front of them, but when they can't stop in time, they crash.
 ///
 /// Every simulation step a car:
-///   Deliberate - decides where to go (PlanRoute), reserves the free cells it will need soon, finds the first thing
-///                it must stop for (a red light, a car, a busy junction...) and chooses its speed so it stops smoothly
-///                before it (Intelligent Driver Model, see CarFollowing).
-///   Act        - moves forward, never past the cells it holds, and gives back the cells it has left behind.
+///   Deliberate - decides where to go (PlanRoute), looks at the road ahead (reserving the free cells it will need
+///                soon), finds the first thing it must stop for and chooses its speed so it stops smoothly before it
+///                (Intelligent Driver Model, see CarFollowing).
+///   Act        - moves forward and gives back the cells it has left behind.
+/// A crashed car does nothing until the World tows it away.
 /// </summary>
-public abstract class Vehicle : Agent
+public abstract partial class Vehicle : Agent
 {
     // The cells this car holds, in driving order: the cells under it first, then the ones reserved ahead.
     readonly List<RoadCell> heldCells = new List<RoadCell>();
 
-    // Turn-taking at junctions: the cells we are stopped waiting for (null when not waiting).
-    List<RoadCell> cellsWaitingFor;
-
     // How long we had been stuck when we last looked for another way (we look again every few seconds stuck).
     float secondsStuckAtLastDetour;
 
-    protected Vehicle(int id, RoadCell cellBehind, RoadCell startCell, DriverProfile driver, float length)
+    protected Vehicle(int id, RoadCell cellBehind, RoadCell startCell, DriverProfile driver, float length, bool followsTrafficRules)
     {
         Id = id;
         Driver = driver;
         Length = length;
-        Path = new VehiclePath(cellBehind, startCell);
-        WaitingSince = float.PositiveInfinity;
-
-        foreach (RoadCell cell in Path.CellsUnderCar(Length))
-            Take(cell);
+        FollowsTrafficRules = followsTrafficRules;
+        PlaceAt(cellBehind, startCell);
     }
 
     public int Id { get; }
     public DriverProfile Driver { get; }
     public float Length { get; }
-    public VehiclePath Path { get; }
+    public VehiclePath Path { get; private set; }
+
+    /// <summary>False for rebels, who ignore every traffic rule.</summary>
+    public bool FollowsTrafficRules { get; }
 
     /// <summary>Meters per second.</summary>
     public float Speed { get; private set; }
 
     /// <summary>The direction the car is driving right now.</summary>
     public Direction Heading => Path.FrontLink.Heading;
+
+    /// <summary>The cell the front bumper is on (cells meet halfway between their centers).</summary>
+    public RoadCell CellAtFront => Path.FrontDistance < Path.FrontLink.Length / 2f ? Path.FrontLink.From : Path.FrontLink.To;
 
     /// <summary>What made the car slow down or stop in the last step (for the HUD and for debugging).</summary>
     public ObstacleReason WaitingFor { get; private set; }
@@ -57,15 +63,40 @@ public abstract class Vehicle : Agent
     public float DistanceDriven { get; private set; }
 
     /// <summary>Simulation time when the car started waiting at a junction (infinity when it isn't waiting).</summary>
-    public float WaitingSince { get; private set; }
+    public float WaitingSince { get; private set; } = float.PositiveInfinity;
+
+    /// <summary>Simulation time of the car's crash, or NaN if it isn't crashed.</summary>
+    public float CrashedAt { get; private set; } = float.NaN;
+
+    public bool IsCrashed => !float.IsNaN(CrashedAt);
+
+    /// <summary>How many times a tow truck has moved the car to a new place after a crash.</summary>
+    public int TimesTowed { get; private set; }
 
     public IReadOnlyList<RoadCell> HeldCells => heldCells;
 
-    /// <summary>Decides where the car is going. Called every step before the car reserves cells ahead.</summary>
+    /// <summary>Decides where the car is going. Called every step before the car looks at the road ahead.</summary>
     protected abstract void PlanRoute(World world);
+
+    /// <summary>Called after the car was towed to a new place, so it can plan its route again.</summary>
+    protected virtual void OnTowed(World world) { }
+
+    /// <summary>A new car decides where it is going as soon as it appears, so other drivers can see where it will drive.</summary>
+    public void PlanFirstRoute(World world) => PlanRoute(world);
+
+    // ------------------------------------------------------------------
+    // The agent loop
+    // ------------------------------------------------------------------
 
     public override void Deliberate(World world)
     {
+        if (IsCrashed)
+        {
+            Speed = 0f;
+            WaitingFor = ObstacleReason.Crash;
+            return;
+        }
+
         PlanRoute(world);
 
         bool stuckForAWhile = SecondsStuck - secondsStuckAtLastDetour > world.Settings.SecondsStuckBeforeLookingForAnotherWay;
@@ -75,191 +106,18 @@ public abstract class Vehicle : Agent
             secondsStuckAtLastDetour = SecondsStuck;
         }
 
-        Obstacle obstacle = ReserveCellsAhead(world);
+        Obstacle obstacle = FollowsTrafficRules ? LookAheadFollowingTheRules(world) : LookAheadIgnoringTheRules(world);
         WaitingFor = obstacle.Reason;
         Speed = ChooseSpeed(obstacle, world);
     }
 
     public override void Act(World world)
     {
-        DriveForward(world.DeltaTime);
+        if (IsCrashed) return;
+
+        DriveForward(world);
         GiveBackCellsBehind();
         CountSecondsStuck(world);
-    }
-
-    // ------------------------------------------------------------------
-    // Reserving the road ahead
-    // ------------------------------------------------------------------
-
-    /// <summary>
-    /// Reserves the cells the car will reach soon (as far as it needs to be able to stop) and returns the first
-    /// thing it can't drive past.
-    /// </summary>
-    Obstacle ReserveCellsAhead(World world)
-    {
-        float lookAhead = BrakingDistance(Speed) + world.Settings.MetersPerCell;
-        bool waitingAtJunction = false;
-        bool alreadyTriedKeepingStraight = false;
-        Obstacle obstacle = Obstacle.None;
-
-        int index = FirstPathIndexNotHeld();
-        while (true)
-        {
-            if (index > Path.LastIndex)
-            {
-                obstacle = Obstacle.StopAt(Path.RemainingLength, ObstacleReason.EndOfRoute);
-                break;
-            }
-
-            float distanceToCell = Path.DistanceToEntryOf(index);
-            if (distanceToCell > lookAhead) break;   // far enough away: we'll reserve it in a later step
-
-            CellLink linkIntoCell = Path.LinkAt(index - 1);
-            if (MustStopForTrafficLight(linkIntoCell.From, distanceToCell))
-            {
-                obstacle = Obstacle.StopAt(distanceToCell, ObstacleReason.RedLight);
-                break;
-            }
-
-            List<RoadCell> cellsNeeded = CellsToTakeTogether(index, out int lastIndexNeeded);
-            Vehicle blocker = OtherCarHolding(cellsNeeded) ?? CarThatWaitedLongerFor(cellsNeeded);
-            if (blocker == null)
-            {
-                foreach (RoadCell cell in cellsNeeded) Take(cell);
-                index = lastIndexNeeded + 1;
-                continue;
-            }
-
-            // The planned lane change is blocked: stay in our lane and find another way instead of stopping.
-            if (linkIntoCell.IsLaneChange && !alreadyTriedKeepingStraight)
-            {
-                alreadyTriedKeepingStraight = true;
-                if (TryKeepingStraight(index - 1, linkIntoCell, world)) continue;
-            }
-
-            if (ContainsJunction(cellsNeeded))
-            {
-                WaitAtJunction(cellsNeeded, world.Time);
-                waitingAtJunction = true;
-            }
-            obstacle = ObstacleFor(blocker, cellsNeeded, linkIntoCell, distanceToCell);
-            break;
-        }
-
-        if (!waitingAtJunction) StopWaitingAtJunction();
-        return obstacle;
-    }
-
-    /// <summary>
-    /// Usually just the next cell of the path. Two exceptions:
-    ///  - a lane change needs its whole 2x2 block: the cell beside us, the cell ahead of us and the target cell;
-    ///  - a crossing is taken together with the cells after it, up to the first cell that isn't a crossing,
-    ///    so the car never stops inside a crossing and blocks the traffic crossing its path.
-    /// </summary>
-    List<RoadCell> CellsToTakeTogether(int index, out int lastIndexNeeded)
-    {
-        var cells = new List<RoadCell>();
-        CellLink linkIntoCell = Path.LinkAt(index - 1);
-        lastIndexNeeded = index;
-
-        if (linkIntoCell.IsLaneChange)
-        {
-            cells.Add(linkIntoCell.CellBeside);
-            cells.Add(linkIntoCell.CellAhead);
-            cells.Add(linkIntoCell.To);
-            return cells;
-        }
-
-        cells.Add(Path.Cells[index]);
-        while (Path.Cells[lastIndexNeeded].IsCrossing && lastIndexNeeded < Path.LastIndex)
-        {
-            lastIndexNeeded++;
-            cells.Add(Path.Cells[lastIndexNeeded]);
-        }
-        return cells;
-    }
-
-    bool MustStopForTrafficLight(RoadCell cell, float distanceToStopLine)
-    {
-        TrafficLight light = cell.TrafficLight;
-        if (light == null || light.Color == LightColor.Green) return false;
-        if (light.Color == LightColor.Red) return true;
-
-        // Yellow: stop if we can do it comfortably, otherwise it's safer to keep going.
-        return BrakingDistance(Speed) <= distanceToStopLine;
-    }
-
-    Vehicle OtherCarHolding(List<RoadCell> cells)
-    {
-        foreach (RoadCell cell in cells)
-            if (cell.Holder != null && cell.Holder != this) return cell.Holder;
-        return null;
-    }
-
-    /// <summary>
-    /// Taking turns at junctions: if another car has been waiting longer for any of these cells, and those cells
-    /// are free for it right now, it goes first.
-    /// </summary>
-    Vehicle CarThatWaitedLongerFor(List<RoadCell> cells)
-    {
-        foreach (RoadCell cell in cells)
-        {
-            foreach (Vehicle other in cell.CarsWaiting)
-            {
-                bool waitedLonger = other != this && other.WaitingSince < WaitingSince;
-                if (waitedLonger && other.CanTakeTheCellsItIsWaitingFor()) return other;
-            }
-        }
-        return null;
-    }
-
-    bool CanTakeTheCellsItIsWaitingFor()
-    {
-        foreach (RoadCell cell in cellsWaitingFor)
-            if (cell.Holder != null && cell.Holder != this) return false;
-        return true;
-    }
-
-    static bool ContainsJunction(List<RoadCell> cells)
-    {
-        foreach (RoadCell cell in cells)
-            if (cell.IsJunction) return true;
-        return false;
-    }
-
-    void WaitAtJunction(List<RoadCell> cells, float now)
-    {
-        bool alreadyWaitingHere = cellsWaitingFor != null && cellsWaitingFor[0] == cells[0];
-        if (alreadyWaitingHere) return;
-
-        StopWaitingAtJunction();
-        cellsWaitingFor = cells;
-        WaitingSince = now;
-        foreach (RoadCell cell in cells) cell.CarsWaiting.Add(this);
-    }
-
-    void StopWaitingAtJunction()
-    {
-        if (cellsWaitingFor == null) return;
-        foreach (RoadCell cell in cellsWaitingFor) cell.CarsWaiting.Remove(this);
-        cellsWaitingFor = null;
-        WaitingSince = float.PositiveInfinity;
-    }
-
-    /// <summary>
-    /// A car ahead of us, driving our way and blocking the very next cell, is followed at its speed.
-    /// Anything else (cross traffic, a busy junction, a blocked lane change) is treated like a wall.
-    /// </summary>
-    static Obstacle ObstacleFor(Vehicle blocker, List<RoadCell> cellsNeeded, CellLink linkIntoCell, float distanceToCell)
-    {
-        bool followingCarAhead = !linkIntoCell.IsLaneChange
-                                 && cellsNeeded[0].Holder == blocker
-                                 && blocker.Heading == linkIntoCell.Heading;
-        if (followingCarAhead)
-            return new Obstacle(distanceToCell, blocker.Speed, ObstacleReason.CarAhead);
-
-        ObstacleReason reason = linkIntoCell.IsLaneChange ? ObstacleReason.BusyLane : ObstacleReason.BusyJunction;
-        return Obstacle.StopAt(distanceToCell, reason);
     }
 
     // ------------------------------------------------------------------
@@ -269,30 +127,59 @@ public abstract class Vehicle : Agent
     float ChooseSpeed(Obstacle obstacle, World world)
     {
         SimulationSettings settings = world.Settings;
-        float desiredSpeed = settings.SpeedLimit * Driver.SpeedFactor;
-        desiredSpeed = Math.Min(desiredSpeed, SpeedAllowedBeforeNextTurn(settings));
+        float desiredSpeed = FollowsTrafficRules ? CellAtFront.SpeedLimit * Driver.SpeedFactor : settings.RebelSpeed;
+        desiredSpeed = Math.Min(desiredSpeed, SpeedAllowedBeforeWhatIsAhead(settings));
 
         // At the end of the route we want to stop right at the destination, not a gap before it.
         float stoppedGap = obstacle.Reason == ObstacleReason.EndOfRoute ? 0f : settings.StoppedGap;
 
         float acceleration = CarFollowing.Acceleration(Speed, desiredSpeed, obstacle, stoppedGap, Driver);
-        return Math.Max(0f, Speed + acceleration * world.DeltaTime);
+        float newSpeed = Math.Max(0f, Speed + acceleration * world.DeltaTime);
+
+        // Law-abiding drivers never go over the speed limit, not even for a moment.
+        if (FollowsTrafficRules) newSpeed = Math.Min(newSpeed, SlowestLimitWithin(newSpeed * world.DeltaTime));
+        return newSpeed;
     }
 
-    /// <summary>Cars slow down before corners: brake so we reach the next corner at turning speed.</summary>
-    float SpeedAllowedBeforeNextTurn(SimulationSettings settings)
+    /// <summary>The lowest speed limit of the cells the front bumper will be on while driving the next 'distance' meters.</summary>
+    float SlowestLimitWithin(float distance)
     {
-        float lookAhead = BrakingDistance(settings.SpeedLimit * 1.2f) + settings.MetersPerCell;
-        for (int i = Path.FrontIndex; i + 1 < Path.LastIndex; i++)
+        float slowest = CellAtFront.SpeedLimit;
+        for (int i = Path.FrontIndex + 1; i <= Path.LastIndex; i++)
         {
-            float distanceToCorner = Path.DistanceToCenterOf(i + 1);
-            if (distanceToCorner > lookAhead) break;
-
-            bool turnsThere = Path.LinkAt(i).Heading != Path.LinkAt(i + 1).Heading;
-            if (turnsThere)
-                return MathF.Sqrt(settings.TurnSpeed * settings.TurnSpeed + 2f * Driver.ComfortableBraking * Math.Max(0f, distanceToCorner));
+            if (Path.DistanceToEntryOf(i) > distance) break;
+            slowest = Math.Min(slowest, Path.Cells[i].SpeedLimit);
         }
-        return float.PositiveInfinity;
+        return slowest;
+    }
+
+    /// <summary>
+    /// Everybody slows down before corners; law-abiding drivers also slow down before entering a slower street.
+    /// For each of those points ahead we brake so we reach it at its speed (speed² = target² + 2 · braking · distance).
+    /// </summary>
+    float SpeedAllowedBeforeWhatIsAhead(SimulationSettings settings)
+    {
+        float lookAhead = BrakingDistance(settings.RebelSpeed) + settings.MetersPerCell;
+        float allowed = float.PositiveInfinity;
+
+        for (int i = Path.FrontIndex + 1; i <= Path.LastIndex; i++)
+        {
+            float distanceToCell = Path.DistanceToEntryOf(i);
+            if (distanceToCell > lookAhead) break;
+
+            if (FollowsTrafficRules)
+                allowed = Math.Min(allowed, SpeedToArriveAt(Path.Cells[i].SpeedLimit, distanceToCell));
+
+            bool turnsAtThisCell = i < Path.LastIndex && Path.LinkAt(i - 1).Heading != Path.LinkAt(i).Heading;
+            if (turnsAtThisCell)
+                allowed = Math.Min(allowed, SpeedToArriveAt(settings.TurnSpeed, Path.DistanceToCenterOf(i)));
+        }
+        return allowed;
+    }
+
+    float SpeedToArriveAt(float targetSpeed, float distance)
+    {
+        return MathF.Sqrt(targetSpeed * targetSpeed + 2f * Driver.ComfortableBraking * Math.Max(0f, distance));
     }
 
     float BrakingDistance(float speed) => speed * speed / (2f * Driver.ComfortableBraking);
@@ -301,25 +188,47 @@ public abstract class Vehicle : Agent
     // Moving
     // ------------------------------------------------------------------
 
-    void DriveForward(float seconds)
+    void DriveForward(World world)
     {
+        float seconds = world.DeltaTime;
         float distance = Speed * seconds;
-        float allowed = Math.Max(0f, DistanceWeMayDrive());
-        if (distance > allowed)
+
+        // Law-abiding cars never drive past the cells they hold. Rebels drive on (and crash if something is there).
+        if (FollowsTrafficRules)
         {
-            // We reached the end of the cells we hold: stop there.
-            distance = allowed;
-            Speed = distance / seconds;
+            float allowed = Math.Max(0f, DistanceToFirstCellNotHeld());
+            if (distance > allowed)
+            {
+                distance = allowed;
+                Speed = distance / seconds;
+            }
         }
+        distance = Math.Min(distance, Path.RemainingLength);
+
+        CountRedLightIfWeRunOne(distance, world);
         Path.AdvanceFront(distance);
         DistanceDriven += distance;
     }
 
-    /// <summary>How far the front bumper can move while staying on cells we hold.</summary>
-    float DistanceWeMayDrive()
+    float DistanceToFirstCellNotHeld()
     {
         int index = FirstPathIndexNotHeld();
         return index > Path.LastIndex ? Path.RemainingLength : Path.DistanceToEntryOf(index);
+    }
+
+    /// <summary>Crossing a stop line while its light is red is recorded as a violation (only rebels do it).</summary>
+    void CountRedLightIfWeRunOne(float distanceThisStep, World world)
+    {
+        for (int i = Path.FrontIndex + 1; i <= Path.LastIndex; i++)
+        {
+            float distanceToCell = Path.DistanceToEntryOf(i);
+            if (distanceToCell > distanceThisStep) return;
+
+            TrafficLight light = Path.Cells[i - 1].TrafficLight;
+            bool crossesTheStopLineNow = distanceToCell > 0f;
+            if (light != null && crossesTheStopLineNow && light.Color == LightColor.Red)
+                world.Metrics.RecordRedLightRun();
+        }
     }
 
     void GiveBackCellsBehind()
@@ -356,6 +265,12 @@ public abstract class Vehicle : Agent
         heldCells.Add(cell);
     }
 
+    void GiveBackAllCells()
+    {
+        foreach (RoadCell cell in heldCells) cell.Release(this);
+        heldCells.Clear();
+    }
+
     int FirstPathIndexNotHeld()
     {
         for (int i = Path.FrontIndex + 1; i <= Path.LastIndex; i++)
@@ -364,69 +279,34 @@ public abstract class Vehicle : Agent
     }
 
     // ------------------------------------------------------------------
-    // Routes
+    // Crashes
     // ------------------------------------------------------------------
 
-    /// <summary>
-    /// Where new routes start: the last path cell we already hold (we can't give those back),
-    /// or at least the cell the front bumper is driving into.
-    /// </summary>
-    protected int IndexWhereNewRoutesStart()
+    /// <summary>The car hit (or was hit by) another car: it stops where it is and waits for the tow truck.</summary>
+    public void Crash(float now)
     {
-        int lastHeld = FirstPathIndexNotHeld() - 1;
-        return Math.Min(Path.LastIndex, Math.Max(Path.FrontIndex + 1, lastHeld));
+        if (IsCrashed) return;
+        CrashedAt = now;
+        Speed = 0f;
+        WaitingSince = float.PositiveInfinity;
     }
 
-    /// <summary>Changes the destination. Returns false if there is no way to get there.</summary>
-    protected bool DriveTo(RoadCell destination, World world)
+    /// <summary>The tow truck takes the car away: it gives back every cell and starts again somewhere else.</summary>
+    public void TowTo(RoadCell cellBehind, RoadCell startCell, World world)
     {
-        int start = IndexWhereNewRoutesStart();
-        List<RoadCell> route = RouteFinder.FindRoute(Path.Cells[start], destination, world.Settings);
-        if (route == null) return false;
-        Path.ReplaceAfter(start, route);
-        return true;
+        GiveBackAllCells();
+        PlaceAt(cellBehind, startCell);
+        CrashedAt = float.NaN;
+        TimesTowed++;
+        OnTowed(world);
     }
 
-    /// <summary>Adds a trip to a new destination at the end of the current path.</summary>
-    protected void ContinueTo(RoadCell destination, World world)
+    void PlaceAt(RoadCell cellBehind, RoadCell startCell)
     {
-        List<RoadCell> route = RouteFinder.FindRoute(Path.LastCell, destination, world.Settings);
-        if (route != null) Path.Extend(route);
-    }
-
-    /// <summary>Meters the car would drive to reach a cell (following roads, not in a straight line).</summary>
-    public float DrivingDistanceTo(RoadCell destination, World world)
-    {
-        int start = IndexWhereNewRoutesStart();
-        List<RoadCell> route = RouteFinder.FindRoute(Path.Cells[start], destination, world.Settings);
-        if (route == null) return float.PositiveInfinity;
-        return Path.DistanceToCenterOf(start) + RouteFinder.LengthOf(route);
-    }
-
-    bool TryKeepingStraight(int laneChangeStartIndex, CellLink laneChange, World world)
-    {
-        List<RoadCell> route = RouteFinder.FindRoute(laneChange.CellAhead, Path.LastCell, world.Settings);
-        if (route == null) return false;
-
-        route.Insert(0, Path.Cells[laneChangeStartIndex]);
-        Path.ReplaceAfter(laneChangeStartIndex, route);
-        return true;
-    }
-
-    /// <summary>
-    /// We have been stuck for a long time (not at a red light): maybe the road ahead is jammed.
-    /// Try a route to the same destination that avoids the cell we are waiting for.
-    /// </summary>
-    void LookForAnotherWay(World world)
-    {
-        int start = IndexWhereNewRoutesStart();
-        if (start >= Path.LastIndex) return;
-
-        RoadCell blockedCell = Path.Cells[start + 1];
-        List<RoadCell> route = RouteFinder.FindRoute(Path.Cells[start], Path.LastCell, world.Settings, cellToAvoid: blockedCell);
-        if (route == null) return;
-
-        Path.ReplaceAfter(start, route);
-        world.Statistics.DetoursTaken++;
+        Path = new VehiclePath(cellBehind, startCell);
+        Speed = 0f;
+        SecondsStuck = 0f;
+        secondsStuckAtLastDetour = 0f;
+        foreach (RoadCell cell in Path.CellsUnderCar(Length)) Take(cell);
     }
 }

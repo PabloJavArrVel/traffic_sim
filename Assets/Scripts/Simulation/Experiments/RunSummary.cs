@@ -4,6 +4,7 @@ using System.Collections.Generic;
 /// <summary>
 /// The key numbers of one run, measured after the warm-up (the first minutes, while the city fills up, are left out).
 /// Rides count when they were requested after the warm-up and finished before the end of the run.
+/// Numbers that can't be measured (for example the waiting time when no ride was completed) are NaN, not 0.
 /// </summary>
 public class RunSummary
 {
@@ -11,6 +12,7 @@ public class RunSummary
     public int Seed;
     public int AmbientCars;
     public int Taxis;
+    public int RebelCars;
 
     // Traffic
     public float AverageSpeedKmh;
@@ -22,15 +24,23 @@ public class RunSummary
     public int DetoursTaken;
     public float LongestStopSeconds;
 
+    // Rules and safety
+    public float ShareSpeeding;
+    public int RedLightsRun;
+    public int Collisions;
+    public int CollisionsInvolvingRebels;
+    public int CollisionsBetweenLawAbidingDrivers;   // should always be 0
+    public int CollisionsInvolvingTaxis;
+
     // Taxi service
     public float ShareOfTaxisBusy;
     public int RidesFinished;
     public int RidesCompleted;
     public int RidesGivenUp;
-    public float ShareGivenUp;
-    public float AverageSecondsUntilPickup;
-    public float Percentile90SecondsUntilPickup;
-    public float AverageTripSeconds;
+    public float ShareGivenUp = float.NaN;
+    public float AverageSecondsUntilPickup = float.NaN;
+    public float Percentile90SecondsUntilPickup = float.NaN;
+    public float AverageTripSeconds = float.NaN;
 
     /// <summary>Average number of stopped cars near each intersection (numbered as in the Check City Map report).</summary>
     public float[] AverageQueuePerIntersection;
@@ -48,8 +58,12 @@ public class RunSummary
             LongestStopSeconds = world.Statistics.LongestStopSeconds
         };
 
+        foreach (Vehicle vehicle in world.Vehicles)
+            if (!vehicle.FollowsTrafficRules) summary.RebelCars++;
+
         AddTrafficNumbers(summary, world, warmupEnd);
         AddRideNumbers(summary, world.Metrics.Rides, warmupEnd);
+        AddCollisionNumbers(summary, world.Metrics.Collisions, warmupEnd);
         return summary;
     }
 
@@ -72,6 +86,8 @@ public class RunSummary
             summary.ShareStoppedBehindCar += sample.ShareStoppedBehindCar / afterWarmup.Count;
             summary.ShareStoppedAtJunction += sample.ShareStoppedAtJunction / afterWarmup.Count;
             summary.ShareOfTaxisBusy += sample.ShareOfTaxisBusy / afterWarmup.Count;
+            summary.ShareSpeeding += sample.ShareSpeeding / afterWarmup.Count;
+            summary.RedLightsRun += sample.RedLightsRun;
             kilometers += sample.KilometersDriven;
             seconds += world.Metrics.SampleSeconds;
             for (int i = 0; i < intersections; i++)
@@ -80,6 +96,18 @@ public class RunSummary
 
         float vehicleHours = world.Vehicles.Count * seconds / 3600f;
         summary.KilometersPerVehiclePerHour = vehicleHours > 0f ? kilometers / vehicleHours : 0f;
+    }
+
+    static void AddCollisionNumbers(RunSummary summary, IReadOnlyList<CollisionRecord> collisions, float warmupEnd)
+    {
+        foreach (CollisionRecord collision in collisions)
+        {
+            if (collision.Time < warmupEnd) continue;
+            summary.Collisions++;
+            if (collision.RebelInvolved) summary.CollisionsInvolvingRebels++;
+            else summary.CollisionsBetweenLawAbidingDrivers++;
+            if (collision.TaxiInvolved) summary.CollisionsInvolvingTaxis++;
+        }
     }
 
     static void AddRideNumbers(RunSummary summary, IReadOnlyList<RideRecord> rides, float warmupEnd)
@@ -101,7 +129,7 @@ public class RunSummary
             tripSeconds += ride.TripSeconds;
         }
 
-        summary.ShareGivenUp = summary.RidesFinished > 0 ? (float)summary.RidesGivenUp / summary.RidesFinished : 0f;
+        if (summary.RidesFinished > 0) summary.ShareGivenUp = (float)summary.RidesGivenUp / summary.RidesFinished;
         if (pickupTimes.Count == 0) return;
 
         pickupTimes.Sort();

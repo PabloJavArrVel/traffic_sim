@@ -11,7 +11,7 @@ public class DriverProfile
         TimeGap = timeGap;
     }
 
-    /// <summary>1.0 = drives exactly at the speed limit, 0.9 = 10% slower.</summary>
+    /// <summary>1.0 = drives exactly at the speed limit, 0.9 = 10% slower. Law-abiding drivers never go above 1.0.</summary>
     public float SpeedFactor { get; }
 
     /// <summary>How fast the driver speeds up, in m/s².</summary>
@@ -28,10 +28,16 @@ public class DriverProfile
     {
         float calmness = Blend(calmnessMin, calmnessMax, (float)random.NextDouble());
         return new DriverProfile(
-            speedFactor: Blend(1.1f, 0.85f, calmness),
+            speedFactor: Blend(1f, 0.85f, calmness),
             maxAcceleration: Blend(2.5f, 1.5f, calmness),
             comfortableBraking: Blend(3.5f, 2.5f, calmness),
             timeGap: Blend(0.9f, 1.8f, calmness));
+    }
+
+    /// <summary>Rebels ignore speed limits (see SimulationSettings.RebelSpeedKmh) and drive like the most hurried driver.</summary>
+    public static DriverProfile Rebel()
+    {
+        return new DriverProfile(speedFactor: 1f, maxAcceleration: 3f, comfortableBraking: 3.5f, timeGap: 0.6f);
     }
 
     /// <summary>Taxis are autonomous: they drive smoothly and exactly at the speed limit.</summary>
