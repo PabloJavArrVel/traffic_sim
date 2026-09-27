@@ -82,7 +82,11 @@ public class VehicleView : MonoBehaviour
         simulationTimeOfCurrentPose = simulation.World.Time;
     }
 
-    /// <summary>Tints the car's materials without changing the shared material assets.</summary>
+    /// <summary>
+    /// Tints the car's materials without changing the shared material assets.
+    /// The car models get their paint from each material's color, so the tint multiplies that color
+    /// (one property block per material slot) instead of replacing it.
+    /// </summary>
     void ShowTint()
     {
         wasCrashed = vehicle.IsCrashed;
@@ -92,10 +96,20 @@ public class VehicleView : MonoBehaviour
 
         foreach (Renderer part in renderers)
         {
-            part.GetPropertyBlock(tint);
-            tint.SetColor("_BaseColor", color);   // URP materials
-            tint.SetColor("_Color", color);       // built-in materials
-            part.SetPropertyBlock(tint);
+            Material[] materials = part.sharedMaterials;
+            for (int slot = 0; slot < materials.Length; slot++)
+            {
+                tint.Clear();
+                Material material = materials[slot];
+                if (color != Color.white && material != null)
+                {
+                    if (material.HasProperty("_BaseColor"))   // URP materials
+                        tint.SetColor("_BaseColor", material.GetColor("_BaseColor") * color);
+                    if (material.HasProperty("_Color"))       // built-in materials
+                        tint.SetColor("_Color", material.GetColor("_Color") * color);
+                }
+                part.SetPropertyBlock(tint, slot);
+            }
         }
     }
 }
