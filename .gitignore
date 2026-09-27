@@ -1,18 +1,58 @@
-[Ll]ibrary/
-[Tt]emp/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-UserSettings/
-_recovery/
+# =========================
+# Unity generated folders
+# =========================
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/Assets/_Recovery/
+/Assets/_Recovery.meta
 
+# =========================
+# IDE / solution files (Unity regenerates them)
+# =========================
+.vs/
+.vscode/
+.idea/
 *.csproj
-*.pidb
+*.sln
+*.slnx
 *.suo
 *.user
 *.userprefs
+*.pidb
 *.booproj
-.vscode/
 *.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
 
+# =========================
+# Test runs from the command line
+# =========================
+/TestResults*.xml
+
+# =========================
+# OS files
+# =========================
 .DS_Store
+Thumbs.db
+
+# =========================
+# Excel lock files (created while the city map is open in Excel)
+# =========================
+~$*
+
+# =========================
+# Crash logs
+# =========================
+sysinfo.txt
